@@ -6,6 +6,16 @@ from bs4 import BeautifulSoup
 
 headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 YaBrowser/25.12.0.0 Safari/537.36'}
 
+exercises = {
+    'Отжимания': 'https://media1.tenor.com/m/wr_9-cLvSkYAAAAC/отжимания.gif',
+    'Приседания': 'https://i.pinimg.com/originals/f9/db/a3/f9dba36451cab8b0b5be6d5ec9fd438a.gif',
+    'Планка': 'https://i.pinimg.com/originals/d9/af/0e/d9af0e82465af0aa3c41e15cd8ed6d7b.gif',
+    'Выпады': 'https://media1.tenor.com/m/PF7Q7Qu1wJEAAAAC/lunges.gif'
+}
+
+def get_random_exercise():
+    exercise_type = random.choice(list(exercises.keys()))
+    return exercise_type, exercises[exercise_type]
 
 def get_url_meme():
     try:

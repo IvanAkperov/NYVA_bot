@@ -1,10 +1,11 @@
 import asyncio
+import random
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, InputMediaAudio
-from aiogram.types import FSInputFile
-from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre
-from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
+from aiogram.types import Message, InputMediaAudio, CallbackQuery
+from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
+    get_random_exercise, exercises
+from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta
 import sqlite3
@@ -214,12 +215,42 @@ async def reminder_checker(bot: Bot):
         await asyncio.sleep(10)
 
 
+@dp.message(Command('exercise'))
+async def send_gif(message: Message):
+    exercise, gif = get_random_exercise()
+    cursor.execute(
+        "INSERT INTO exercise (user_id, exercise_type, timestamp) VALUES (?, ?, ?)",
+        (message.chat.id, exercise, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    )
+    conn.commit()
+
+    if exercise != 'Планка':
+        amount = random.randint(1, 30)
+        await message.reply_animation(animation=gif, caption=f"Давай ка, сделай {exercise} {amount} раз.")
+    else:
+        await message.reply_animation(animation=gif, caption=f"Осилишь планку 5 минут?")
+
+    asyncio.create_task(ask_exercise_done(message.chat.id, exercise))
+
+async def ask_exercise_done(chat_id: int, exercise: str):
+    await asyncio.sleep(300)
+
+    await bot.send_message(chat_id, f"Сделал ли ты упражнение: {exercise}?", reply_markup=exercise_kb(exercise))
+
+# хэндлер для кнопок
+@dp.callback_query(F.data.startswith("done_"))
+async def handle_done(callback: CallbackQuery):
+    answer, exercise = callback.data.split(":")
+    if answer == "done_yes":
+        await callback.message.edit_text(f"Молодец! Упражнение {exercise} выполнено 💪")
+    else:
+        await callback.message.edit_text(f"Жаль 😔 Упражнение {exercise} не выполнено")
+
 
 # @dp.message(F.audio)
 # async def catch_audio(message: Message):
 #     print(message.audio.file_id)
 async def main():
-    # запускаем две задачи параллельно
     await asyncio.gather(
         dp.start_polling(bot),
         reminder_checker(bot)

@@ -59,3 +59,10 @@ def next_and_back_kb(genre, index, total):
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
+def exercise_kb(exercise):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Да ✅", callback_data=f"done_yes:{exercise}")],
+        [InlineKeyboardButton(text="Нет ❌", callback_data=f"done_no:{exercise}")]
+    ])
+
+    return kb

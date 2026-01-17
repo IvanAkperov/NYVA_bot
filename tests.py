@@ -13,6 +13,15 @@ cursor = conn.cursor()
 # );
 # """)
 
+
+# cursor.execute("""CREATE TABLE IF NOT EXISTS exercise (
+#     id INTEGER,
+#     user_id INTEGER,
+#     exercise_type TEXT,
+#     timestamp DATETIME NOT NULL,
+#     completed BOOLEAN DEFAULT NULL
+# )
+# """)
 # cursor.execute("""CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, zodiac TEXT)""")
 # conn.commit()
 # NAMES_AND_ZODIAC = {
