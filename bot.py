@@ -123,71 +123,96 @@ async def navigate_tracks(call):
     )
     await call.answer()
 
-@dp.message(Command('remind'))
+@dp.message(Command("remind"))
 async def remind_me(message: Message):
     """
     /remind YYYY-MM-DD HH:MM Текст напоминания
+    Напоминание приходит в тот же чат (группа или личка)
     """
     try:
         args = message.text.split(maxsplit=2)
         if len(args) < 3:
-            raise ValueError("Недостаточно аргументов")
+            raise ValueError
 
-        remind_time_str = args[1] + " " + args[2].split()[0]  # "2026-01-17 18:30"
-        remind_text = " ".join(args[2].split()[1:])
+        date_part = args[1]                      # YYYY-MM-DD
+        time_part, *text_parts = args[2].split() # HH:MM + текст
+
+        remind_time_str = f"{date_part} {time_part}"
+        remind_text = " ".join(text_parts)
+
         remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M")
 
-        user_id = message.from_user.id
-        username = message.from_user.username  # для логов
-
+        # Сохраняем в БД
         conn_local = sqlite3.connect('nyvaBot.db')
         cursor_local = conn_local.cursor()
+
         cursor_local.execute("""
-            INSERT INTO reminders (user_id, username, text, remind_time, notified, reply_message_id)
-            VALUES (?, ?, ?, ?, 0, ?)
-        """, (user_id, username, remind_text, remind_time.strftime("%Y-%m-%d %H:%M:%S"), message.message_id))
+            INSERT INTO reminders (
+                user_id,  -- оставляем для совместимости
+                username,
+                text,
+                remind_time,
+                notified
+            )
+            VALUES (?, ?, ?, ?, 0)
+        """, (
+            message.chat.id,              # ← главное изменение
+            message.from_user.username,
+            remind_text,
+            remind_time.strftime("%Y-%m-%d %H:%M:%S")
+        ))
+
         conn_local.commit()
         conn_local.close()
 
-        await message.reply(f"✅ Напоминание добавлено на {remind_time_str}:\n{remind_text}")
+        await message.reply(
+            f"✅ Напоминание установлено на {remind_time_str}\n"
+            f"📌 Жди уведомления ❤️"
+        )
+
     except Exception:
-        await message.reply("❌ Ошибка! Используй формат:\n/remind YYYY-MM-DD HH:MM Текст задачи")
+        await message.reply(
+            "❌ Ошибка!\n"
+            "Формат:\n"
+            "/remind YYYY-MM-DD HH:MM Текст напоминания"
+        )
+
 
 
 async def reminder_checker(bot: Bot):
     while True:
         now = datetime.now()
+        conn = sqlite3.connect('nyvaBot.db')
+        cursor = conn.cursor()
 
-        conn_check = sqlite3.connect('nyvaBot.db')
-        cursor_check = conn_check.cursor()
-
-        cursor_check.execute("""
-            SELECT id, user_id, text, remind_time, reply_message_id
+        cursor.execute("""
+            SELECT id, user_id, text, remind_time
             FROM reminders
             WHERE notified = 0
         """)
-        reminders = cursor_check.fetchall()
+        reminders = cursor.fetchall()
 
-        for reminder_id, user_id, text, remind_time_str, reply_message_id in reminders:
+        for reminder_id, chat_id, text, remind_time_str in reminders:
             remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M:%S")
-
             if now >= remind_time:
                 try:
                     await bot.send_message(
-                        chat_id=user_id,
-                        text=f"⏰ Напоминание: {text}",
-                        reply_to_message_id=reply_message_id
+                        chat_id=chat_id,
+                        text=f"⏰ Напоминание:\n{text}"
                     )
-                    cursor_check.execute(
+
+                    cursor.execute(
                         "UPDATE reminders SET notified = 1 WHERE id = ?",
                         (reminder_id,)
                     )
-                    conn_check.commit()
-                except Exception as e:
-                    print(f"❌ Ошибка отправки {user_id}: {e}")
+                    conn.commit()
 
-        conn_check.close()
+                except Exception as e:
+                    print(f"❌ Не смог отправить {chat_id}: {e}")
+
+        conn.close()
         await asyncio.sleep(10)
+
 
 
 # @dp.message(F.audio)
