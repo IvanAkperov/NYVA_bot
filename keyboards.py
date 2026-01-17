@@ -1,3 +1,5 @@
+from gc import callbacks
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -29,3 +31,31 @@ def zodiac_keyboard():
             ],
         ]
     )
+
+def music_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text='Рок', callback_data='genre_rock'),
+            InlineKeyboardButton(text='Хип хоп', callback_data='genre_hip'),
+        ],
+        [
+            InlineKeyboardButton(text='Метал', callback_data='genre_metal'),
+            InlineKeyboardButton(text='EDM', callback_data='genre_edm')
+        ]
+    ]
+    )
+
+
+def next_and_back_kb(genre, index, total):
+    """Создаёт клавиатуру навигации по трекам с циклической навигацией и счетчиком."""
+    back_index = (index - 1) % total
+    forward_index = (index + 1) % total
+
+    buttons = [
+        InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_{genre}_{back_index}"),
+        InlineKeyboardButton(text=f"{index + 1}/{total}", callback_data="counter"),
+        InlineKeyboardButton(text="➡️ Далее", callback_data=f"forward_{genre}_{forward_index}")
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+

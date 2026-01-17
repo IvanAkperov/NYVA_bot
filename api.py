@@ -5,27 +5,6 @@ from bs4 import BeautifulSoup
 
 
 headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 YaBrowser/25.12.0.0 Safari/537.36'}
-ZODIAC_MAP = {
-    "aries": "aries",
-    "taurus": "taurus",
-    "gemini": "gemini",
-    "cancer": "cancer",
-    "leo": "leo",
-    "virgo": "virgo",
-    "libra": "libra",
-    "scorpio": "scorpio",
-    "sagittarius": "sagittarius",
-    "capricorn": "capricorn",
-    "aquarius": "aquarius",
-    "pisces": "pisces",
-}
-
-NAMES_AND_ZODIAC = {
-    'ваня': 'pisces',
-    'юля': 'leo',
-    'андрей': 'virgo',
-    'надя': 'taurus'
-}
 
 
 def get_url_meme():
@@ -53,6 +32,12 @@ def get_quote_of_the_day():
         text = f"{ru}\n *{author}*"
         return text
 
+def get_zodiac(username, cursor):
+    cursor.execute("SELECT zodiac FROM users WHERE username = ?", (username,))
+    zodiac = cursor.fetchone()
+    if zodiac:
+        return zodiac[0]
+
 def get_horoscope_of_the_day(sign):
     url = requests.get(
         f'https://goroskop365.ru/{sign}/',
@@ -74,3 +59,13 @@ def get_horoscope_of_the_day(sign):
     )
 
     return text
+
+
+def get_tracks_by_genre(genre, cursor):
+    cursor.execute("""
+        SELECT artist, title, file_id
+        FROM music
+        WHERE genre = ?
+        ORDER BY id
+    """, (genre,))
+    return cursor.fetchall()
