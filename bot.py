@@ -6,9 +6,8 @@ from aiogram.types import FSInputFile
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
 from help_text import greeting_text
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
-
 
 conn = sqlite3.connect('nyvaBot.db')
 cursor = conn.cursor()
@@ -124,11 +123,82 @@ async def navigate_tracks(call):
     )
     await call.answer()
 
+@dp.message(Command('remind'))
+async def remind_me(message: Message):
+    """
+    /remind YYYY-MM-DD HH:MM Текст напоминания
+    """
+    try:
+        args = message.text.split(maxsplit=2)
+        if len(args) < 3:
+            raise ValueError("Недостаточно аргументов")
+
+        remind_time_str = args[1] + " " + args[2].split()[0]  # "2026-01-17 18:30"
+        remind_text = " ".join(args[2].split()[1:])
+        remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M")
+
+        user_id = message.from_user.id
+        username = message.from_user.username  # для логов
+
+        conn_local = sqlite3.connect('nyvaBot.db')
+        cursor_local = conn_local.cursor()
+        cursor_local.execute("""
+            INSERT INTO reminders (user_id, username, text, remind_time, notified, reply_message_id)
+            VALUES (?, ?, ?, ?, 0, ?)
+        """, (user_id, username, remind_text, remind_time.strftime("%Y-%m-%d %H:%M:%S"), message.message_id))
+        conn_local.commit()
+        conn_local.close()
+
+        await message.reply(f"✅ Напоминание добавлено на {remind_time_str}:\n{remind_text}")
+    except Exception:
+        await message.reply("❌ Ошибка! Используй формат:\n/remind YYYY-MM-DD HH:MM Текст задачи")
+
+
+async def reminder_checker(bot: Bot):
+    while True:
+        now = datetime.now()
+
+        conn_check = sqlite3.connect('nyvaBot.db')
+        cursor_check = conn_check.cursor()
+
+        cursor_check.execute("""
+            SELECT id, user_id, text, remind_time, reply_message_id
+            FROM reminders
+            WHERE notified = 0
+        """)
+        reminders = cursor_check.fetchall()
+
+        for reminder_id, user_id, text, remind_time_str, reply_message_id in reminders:
+            remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M:%S")
+
+            if now >= remind_time:
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=f"⏰ Напоминание: {text}",
+                        reply_to_message_id=reply_message_id
+                    )
+                    cursor_check.execute(
+                        "UPDATE reminders SET notified = 1 WHERE id = ?",
+                        (reminder_id,)
+                    )
+                    conn_check.commit()
+                except Exception as e:
+                    print(f"❌ Ошибка отправки {user_id}: {e}")
+
+        conn_check.close()
+        await asyncio.sleep(10)
+
+
 # @dp.message(F.audio)
 # async def catch_audio(message: Message):
 #     print(message.audio.file_id)
 async def main():
-    await dp.start_polling(bot)
+    # запускаем две задачи параллельно
+    await asyncio.gather(
+        dp.start_polling(bot),
+        reminder_checker(bot)
+    )
 
 
 if __name__ == '__main__':
