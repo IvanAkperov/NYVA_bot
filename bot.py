@@ -403,7 +403,7 @@ async def get_chat_id(message: Message):
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=21, minute=25, second=0, microsecond=0)
+        target = now.replace(hour=10, minute=00, second=0, microsecond=0)
 
         if now > target:
             target += timedelta(days=1)
@@ -415,7 +415,7 @@ async def send_horoscope_to_everyone(bot: Bot):
         cursor.execute("SELECT * FROM users;")
         result = cursor.fetchall()
         for user_id, username, zodiac in result:
-            text = f"{username}\n{get_horoscope_of_the_day(zodiac)}"
+            text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
             await bot.send_message(chat_id=-4909725043, text=text)
 
 
