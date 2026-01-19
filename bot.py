@@ -271,9 +271,8 @@ COUPON_TYPES_MAN = [
 async def send_draw_to_user(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=16, minute=20, second=0, microsecond=0)
+        target = now.replace(hour=20, minute=30, second=0, microsecond=0)
 
-        # Если уже прошли 15:50 — целимся на завтра
         if now > target:
             target += timedelta(days=1)
 
@@ -282,7 +281,6 @@ async def send_draw_to_user(bot: Bot):
 
         await asyncio.sleep(seconds_to_wait)
 
-        # ← Здесь уже точно время розыгрыша
         try:
             cursor.execute("SELECT username, user_id FROM users")
             users = cursor.fetchall()
@@ -293,7 +291,6 @@ async def send_draw_to_user(bot: Bot):
 
             winner_username, winner_id = random.choice(users)
 
-            # Проверка, что сегодня ещё не было
             today = datetime.now().strftime('%Y-%m-%d')
             cursor.execute("""
                 SELECT 1 FROM daily_draw 
@@ -304,13 +301,11 @@ async def send_draw_to_user(bot: Bot):
                 print(f"{winner_username} уже получал сегодня")
                 continue
 
-            # Выбор купона
             if winner_username in ('@xquisite_corpse', '@AndreQA23'):
                 coupon = random.choice(COUPON_TYPES_MAN)
             else:
                 coupon = random.choice(COUPON_TYPES_GIRL)
 
-            # Сохраняем
             cursor.execute("""
                 INSERT INTO daily_draw (user_id, username, coupon_type, sent_date)
                 VALUES (?, ?, ?, ?)
