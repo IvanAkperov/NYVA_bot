@@ -377,10 +377,32 @@ async def reminder_checker(bot: Bot):
 async def get_my_coupons(message: Message):
     username = f"@{message.from_user.username}"
     cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
-    result = cursor.fetchone()[0]
+    result = cursor.fetchone()
+    if result:
+        await message.reply(f"У тебя есть купон \n{result[0]}")
+    else:
+        await message.reply(f"Купонов нет")
 
-    await message.reply(f"У тебя есть купон \n{result}")
 
+@dp.message(Command('getid'))
+async def get_chat_id(message: Message):
+    """Получить ID чата/группы"""
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    chat_title = message.chat.title if hasattr(message.chat, 'title') else "ЛС"
+
+    info = f"""
+📊 *Информация о чате:*
+├ Тип: `{chat_type}`
+├ ID: `{chat_id}`
+└ Название: `{chat_title}`
+
+💡 *Как использовать:*
+1. В группе: `GROUP_CHAT_ID = {chat_id}`
+2. В ЛС: твой ID: `{chat_id}`
+"""
+
+    await message.reply(info, parse_mode="Markdown")
 # @dp.message(F.audio)
 # async def catch_audio(message: Message):
 #     print(message.audio.file_id)
