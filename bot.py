@@ -271,7 +271,7 @@ COUPON_TYPES_MAN = [
 async def send_draw_to_user(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=16, minute=10, second=0, microsecond=0)
+        target = now.replace(hour=16, minute=20, second=0, microsecond=0)
 
         # Если уже прошли 15:50 — целимся на завтра
         if now > target:
