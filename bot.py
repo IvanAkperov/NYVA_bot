@@ -7,14 +7,17 @@ from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, ge
     get_random_exercise, exercises
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
 from help_text import greeting_text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import sqlite3
 
-conn = sqlite3.connect('nyvaBot.db')
+conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
+
 date = str(datetime.today()).split(" ")[0]
 bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
 dp = Dispatcher()
+DRAW_TIME = time(15, 50)
+
 music_dict = {
     'rock': 'Рок',
     'hip': 'Хип Хоп',
@@ -178,43 +181,6 @@ async def remind_me(message: Message):
             "/remind YYYY-MM-DD HH:MM Текст напоминания"
         )
 
-
-
-async def reminder_checker(bot: Bot):
-    while True:
-        now = datetime.now()
-        conn = sqlite3.connect('nyvaBot.db')
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, user_id, text, remind_time
-            FROM reminders
-            WHERE notified = 0
-        """)
-        reminders = cursor.fetchall()
-
-        for reminder_id, chat_id, text, remind_time_str in reminders:
-            remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M:%S")
-            if now >= remind_time:
-                try:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=f"⏰ Напоминание:\n{text}"
-                    )
-
-                    cursor.execute(
-                        "UPDATE reminders SET notified = 1 WHERE id = ?",
-                        (reminder_id,)
-                    )
-                    conn.commit()
-
-                except Exception as e:
-                    print(f"❌ Не смог отправить {chat_id}: {e}")
-
-        conn.close()
-        await asyncio.sleep(10)
-
-
 @dp.message(Command('exercise'))
 async def send_gif(message: Message):
     exercise, gif = get_random_exercise()
@@ -247,13 +213,182 @@ async def handle_done(callback: CallbackQuery):
         await callback.message.edit_text(f"Жаль 😔 Упражнение {exercise} не выполнено")
 
 
+def get_winner_of_the_day():
+    cursor.execute("""SELECT username, user_id FROM users;""")
+    users = cursor.fetchall()
+    winner_of_the_day = random.choice(users)
+    return winner_of_the_day[0], winner_of_the_day[1]
+
+# КУПОНЫ ДЛЯ ЖЕНЩИН
+COUPON_TYPES_GIRL = [
+    "💆‍♀️ Сертификат на 30-минутный массаж от партнера",
+    "🛁 Вечер спа-процедур с пеной и свечами",
+    "🎁 Выбор подарка до 3000 рублей",
+    "🍰 Домашний десерт по выбору победителя",
+    "🎬 Вечер кино с выбором фильма победителем",
+    "🌹 Романтический ужин при свечах",
+    "🛒 Избавление от домашних дел на 1 день",
+    "👑 День принцессы - завтрак в постель и повышенное внимание",
+    "💐 Букет цветов от партнера",
+    "🛌 Утро выходного дня без будильников",
+    "🎯 Право на исполнение одного желания (в разумных пределах)",
+    "🛍️ Шопинг-сопровождение без жалоб",
+    "🍷 Вечер дегустации вин с закусками",
+    "💆‍♀️ Профессиональный маникюр в салоне",
+    "✨ Вечер красоты: маска для лица, ванна, уходовые процедуры",
+    "🎮 Бесплатное право выбрать вечернее занятие",
+    "📚 Час тишины и одиночества для чтения/отдыха",
+    "💑 Романтическая прогулка в парке с мороженым",
+    "🎤 Караоке-вечер дома",
+    "🛋️ Вечер на диване под пледом с чаем и разговорами"
+]
+
+# КУПОНЫ ДЛЯ МУЖЧИН
+COUPON_TYPES_MAN = [
+    "🎮 Беспрепятственный гейминг на 3 часа",
+    "🍺 Пивной вечер с друзьями без вопросов",
+    "⚽ Просмотр любого спортивного матча на большом экране",
+    "🍔 Заказ любимой еды на дом",
+    "🎬 Марафон фильмов/сериалов по выбору победителя",
+    "💆‍♂️ 30-минутный массаж спины от партнера",
+    "🎁 Выбор подарка до 3000 рублей",
+    "🏎️ Посещение картинг-центра или симулятора гонок",
+    "🎯 Вечер настольных игр с друзьями",
+    "🍖 Мужской пикник с мясом на гриле",
+    "🎣 Выезд на рыбалку на полдня",
+    "🛠️ День для хобби (гараж, моделирование и т.д.)",
+    "🚗 Право выбора музыки в машине на неделю",
+    "🎫 Билет на спортивное/музыкальное мероприятие",
+    "🥩 Стейк-ужин в ресторане",
+    "🎸 Посещение концерта любимой группы",
+    "📺 Футбольный марафон с пиццей",
+    "🎳 Вечер боулинга или бильярда",
+    "🎮 Новейшая видеоигра по выбору",
+    "🛋️ Полный релакс: диван, пульт и никаких дел"
+]
+
+
+async def send_draw_to_user(bot: Bot):
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=16, minute=00, second=0, microsecond=0)
+
+        # Если уже прошли 15:50 — целимся на завтра
+        if now > target:
+            target += timedelta(days=1)
+
+        seconds_to_wait = (target - now).total_seconds()
+        print(f"До следующего розыгрыша: {seconds_to_wait:.0f} сек")
+
+        await asyncio.sleep(seconds_to_wait)
+
+        # ← Здесь уже точно время розыгрыша
+        try:
+            cursor.execute("SELECT username, user_id FROM users")
+            users = cursor.fetchall()
+
+            if not users:
+                print("Нет пользователей для розыгрыша")
+                continue
+
+            winner_username, winner_id = random.choice(users)
+
+            # Проверка, что сегодня ещё не было
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("""
+                SELECT 1 FROM daily_draw 
+                WHERE user_id = ? AND sent_date = ?
+            """, (winner_id, today))
+
+            if cursor.fetchone():
+                print(f"{winner_username} уже получал сегодня")
+                continue
+
+            # Выбор купона
+            if winner_username in ('@xquisite_corpse', '@AndreQA23'):
+                coupon = random.choice(COUPON_TYPES_MAN)
+            else:
+                coupon = random.choice(COUPON_TYPES_GIRL)
+
+            # Сохраняем
+            cursor.execute("""
+                INSERT INTO daily_draw (user_id, username, coupon_type, sent_date)
+                VALUES (?, ?, ?, ?)
+            """, (winner_id, winner_username, coupon, today))
+            conn.commit()
+
+            text = f"""🎉 ЕЖЕДНЕВНЫЙ РОЗЫГРЫШ 🎉
+
+Победитель дня: {winner_username} 🔥
+Приз: {coupon}
+
+Действует 30 дней • {datetime.now().strftime('%d.%m.%Y')}"""
+
+            await bot.send_message(-5243724804, text)
+            print(f"Розыгрыш отправлен → {winner_username}")
+
+        except Exception as e:
+            print("Ошибка в розыгрыше:", e)
+
+
+# Функция проверки напоминаний (исправленная)
+async def reminder_checker(bot: Bot):
+    while True:
+        try:
+            now = datetime.now()
+
+            # Создаем новое соединение для этой функции
+            conn_local = sqlite3.connect('nyvaBot.db')
+            cursor_local = conn_local.cursor()
+
+            cursor_local.execute("""
+                SELECT id, user_id, text, remind_time
+                FROM reminders
+                WHERE notified = 0
+            """)
+            reminders = cursor_local.fetchall()
+
+            for reminder_id, chat_id, text, remind_time_str in reminders:
+                remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M:%S")
+                if now >= remind_time:
+                    try:
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=f"⏰ Напоминание:\n{text}"
+                        )
+
+                        cursor_local.execute(
+                            "UPDATE reminders SET notified = 1 WHERE id = ?",
+                            (reminder_id,)
+                        )
+                        conn_local.commit()
+
+                    except Exception as e:
+                        print(f"❌ Не смог отправить напоминание {chat_id}: {e}")
+
+            conn_local.close()
+            await asyncio.sleep(10)
+
+        except Exception as e:
+            print(f"❌ Ошибка в reminder_checker: {e}")
+            await asyncio.sleep(10)
+
+@dp.message(Command('get_my_coupons'))
+async def get_my_coupons(message: Message):
+    username = f"@{message.from_user.username}"
+    cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
+    result = cursor.fetchone()[0]
+
+    await message.reply(f"У тебя есть купон \n{result}")
+
 # @dp.message(F.audio)
 # async def catch_audio(message: Message):
 #     print(message.audio.file_id)
 async def main():
     await asyncio.gather(
         dp.start_polling(bot),
-        reminder_checker(bot)
+        reminder_checker(bot),
+        send_draw_to_user(bot)
     )
 
 

@@ -12,6 +12,18 @@ cursor = conn.cursor()
 #     notified INTEGER DEFAULT 0       -- 0 = не отправлено, 1 = отправлено
 # );
 # """)
+# cursor.execute("""DROP TABLE IF EXISTS daily_draw""")
+cursor.execute("""CREATE TABLE IF NOT EXISTS daily_draw (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    coupon_type TEXT NOT NULL,
+    coupon_image_id TEXT,
+    sent_date DATE NOT NULL,
+    used BOOLEAN DEFAULT 0,
+    UNIQUE(user_id, sent_date)
+)""")
+
 
 
 # cursor.execute("""CREATE TABLE IF NOT EXISTS exercise (
