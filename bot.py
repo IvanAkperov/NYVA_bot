@@ -271,7 +271,7 @@ COUPON_TYPES_MAN = [
 async def send_draw_to_user(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=16, minute=00, second=0, microsecond=0)
+        target = now.replace(hour=16, minute=10, second=0, microsecond=0)
 
         # Если уже прошли 15:50 — целимся на завтра
         if now > target:
@@ -324,7 +324,7 @@ async def send_draw_to_user(bot: Bot):
 
 Действует 30 дней • {datetime.now().strftime('%d.%m.%Y')}"""
 
-            await bot.send_message(-5243724804, text)
+            await bot.send_message(-4909725043, text)
             print(f"Розыгрыш отправлен → {winner_username}")
 
         except Exception as e:
