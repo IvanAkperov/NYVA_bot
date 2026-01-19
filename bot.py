@@ -271,7 +271,7 @@ COUPON_TYPES_MAN = [
 async def send_draw_to_user(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=20, minute=30, second=0, microsecond=0)
+        target = now.replace(hour=21, minute=00, second=0, microsecond=0)
 
         if now > target:
             target += timedelta(days=1)
@@ -398,6 +398,27 @@ async def get_chat_id(message: Message):
 """
 
     await message.reply(info, parse_mode="Markdown")
+
+
+async def send_horoscope_to_everyone(bot: Bot):
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=21, minute=25, second=0, microsecond=0)
+
+        if now > target:
+            target += timedelta(days=1)
+
+        seconds_to_wait = (target - now).total_seconds()
+        print(f"До следующего гороскопа: {seconds_to_wait:.0f} сек")
+
+        await asyncio.sleep(seconds_to_wait)
+        cursor.execute("SELECT * FROM users;")
+        result = cursor.fetchall()
+        for user_id, username, zodiac in result:
+            text = f"{username}\n{get_horoscope_of_the_day(zodiac)}"
+            await bot.send_message(chat_id=-4909725043, text=text)
+
+
 # @dp.message(F.audio)
 # async def catch_audio(message: Message):
 #     print(message.audio.file_id)
@@ -405,7 +426,8 @@ async def main():
     await asyncio.gather(
         dp.start_polling(bot),
         reminder_checker(bot),
-        send_draw_to_user(bot)
+        send_draw_to_user(bot),
+        send_horoscope_to_everyone(bot)
     )
 
 
