@@ -1,7 +1,7 @@
 import asyncio
 import random
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import Command, BaseFilter
 from aiogram.types import Message, InputMediaAudio, CallbackQuery
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
     get_random_exercise, exercises
@@ -9,9 +9,12 @@ from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
+from mistral import send_message_from_mistral_bot
+
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
+router = Router()
 
 date = str(datetime.today()).split(" ")[0]
 bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
@@ -469,7 +472,6 @@ async def reminder_checker(bot: Bot):
 async def get_my_coupons(message: Message):
     username = f"@{message.from_user.username}"
     cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
-    print(cursor.fetchall())
     result = cursor.fetchall()
     if result:
         await message.reply(f"У тебя есть купон \n{result[0]}")
@@ -517,9 +519,35 @@ async def send_horoscope_to_everyone(bot: Bot):
             await bot.send_message(chat_id=-4909725043, text=text)
 
 
-# @dp.message(F.audio)
-# async def catch_audio(message: Message):
-#     print(message.audio.file_id)
+class ReplyToThisBotFilter(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        if not message.reply_to_message:
+            return False
+        if not message.reply_to_message.from_user:
+            return False
+        me = await bot.get_me()
+        return message.reply_to_message.from_user.id == me.id
+
+@router.message(lambda message: message.text and message.text.startswith("/"))
+async def handle_interactive(message: Message):
+    try:
+        text = message.text or message.caption
+        if not text:
+            return
+
+        if text.startswith("/"):
+            text = text[1:]
+
+        response_text = await send_message_from_mistral_bot(text)
+        await message.reply(response_text)
+
+    except Exception as e:
+        print(f"Mistral error in handler: {e}")
+        await message.reply("⚠️ Бро, я сломался 😵")
+
+
+
+dp.include_router(router)
 async def main():
     await asyncio.gather(
         dp.start_polling(bot),
