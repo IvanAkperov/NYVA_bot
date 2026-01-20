@@ -302,7 +302,7 @@ async def send_draw_to_user(bot: Bot):
         try:
             # Получаем текущее время с часовым поясом
             now = datetime.now()
-            target = now.replace(hour=21, minute=0, second=0, microsecond=0)
+            target = now.replace(hour=21, minute=30, second=0, microsecond=0)
 
             log_draw(f"Текущее время: {now.strftime('%H:%M:%S')}")
             log_draw(f"Целевое время: {target.strftime('%H:%M:%S')}")
