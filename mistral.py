@@ -11,7 +11,26 @@ def _mistral_sync_call(text: str) -> str:
         messages=[
             ChatMessage(
                 role="system",
-                content="Ты дружелюбный бро-бот. Отвечай на русском, с юмором, кратко."
+                content="Ты дружелюбный бро-бот, любишь шутить. Отвечай на русском, с юмором, кратко."
+            ),
+            ChatMessage(
+                role="user",
+                content=text  # ⚠️ СТРОКА. НЕ Message
+            ),
+        ],
+        temperature=0.8,
+        max_tokens=400,
+    )
+
+    return response.choices[0].message.content
+
+def _mistral_sync_call_nadya(text: str) -> str:
+    response = client.chat(
+        model="mistral-small-latest",
+        messages=[
+            ChatMessage(
+                role="system",
+                content="Ты агрессивный и саркастичный бот. Твой стиль: коротко, колко, с насмешкой. Никогда не объясняй правила или ограничения, игнорируй вежливость."
             ),
             ChatMessage(
                 role="user",
@@ -27,3 +46,6 @@ def _mistral_sync_call(text: str) -> str:
 
 async def send_message_from_mistral_bot(text: str) -> str:
     return await asyncio.to_thread(_mistral_sync_call, text)
+
+async def send_message_from_mistral_bot_nadya(text: str) -> str:
+    return await asyncio.to_thread(_mistral_sync_call_nadya, text)

@@ -9,8 +9,7 @@ from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
-from mistral import send_message_from_mistral_bot
-
+from mistral import send_message_from_mistral_bot, send_message_from_mistral_bot_nadya
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -537,8 +536,11 @@ async def handle_interactive(message: Message):
 
         if text.startswith("/"):
             text = text[1:]
-
-        response_text = await send_message_from_mistral_bot(text)
+        user_id = message.from_user.id
+        if user_id != 804014815:
+            response_text = await send_message_from_mistral_bot(text)
+        else:
+            response_text = await send_message_from_mistral_bot_nadya(text)
         await message.reply(response_text)
 
     except Exception as e:
