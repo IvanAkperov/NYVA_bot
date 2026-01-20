@@ -267,63 +267,160 @@ COUPON_TYPES_MAN = [
     "🛋️ Полный релакс: диван, пульт и никаких дел"
 ]
 
+import os
+from datetime import datetime
+
+# Глобальная настройка логов
+LOG_FILE = "draw_log.txt"
+
+
+def log_draw(message: str):
+    """Запись лога в файл"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] {message}\n"
+
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+        print(log_entry.strip())  # Также выводим в консоль
+    except Exception as e:
+        print(f"Ошибка записи лога: {e}")
+
 
 async def send_draw_to_user(bot: Bot):
+    """Функция розыгрыша с логированием в файл"""
+
+    # Создаем файл логов если его нет
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "w", encoding="utf-8") as f:
+            f.write("=== ЛОГ РОЗЫГРЫША ===\n")
+        log_draw("Файл логов создан")
+
+    log_draw("Функция розыгрыша запущена")
+
     while True:
-        now = datetime.now()
-        target = now.replace(hour=21, minute=00, second=0, microsecond=0)
-
-        if now > target:
-            target += timedelta(days=1)
-
-        seconds_to_wait = (target - now).total_seconds()
-        print(f"До следующего розыгрыша: {seconds_to_wait:.0f} сек")
-
-        await asyncio.sleep(seconds_to_wait)
-
         try:
-            cursor.execute("SELECT username, user_id FROM users")
-            users = cursor.fetchall()
+            # Получаем текущее время с часовым поясом
+            now = datetime.now()
+            target = now.replace(hour=21, minute=0, second=0, microsecond=0)
 
-            if not users:
-                print("Нет пользователей для розыгрыша")
-                continue
+            log_draw(f"Текущее время: {now.strftime('%H:%M:%S')}")
+            log_draw(f"Целевое время: {target.strftime('%H:%M:%S')}")
 
-            winner_username, winner_id = random.choice(users)
+            # Если уже прошло 21:00, ждем до завтра
+            if now > target:
+                target += timedelta(days=1)
+                log_draw("21:00 уже прошло, ждем до завтра")
 
-            today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute("""
-                SELECT 1 FROM daily_draw 
-                WHERE user_id = ? AND sent_date = ?
-            """, (winner_id, today))
+            seconds_to_wait = (target - now).total_seconds()
+            hours, remainder = divmod(seconds_to_wait, 3600)
+            minutes, seconds = divmod(remainder, 60)
 
-            if cursor.fetchone():
-                print(f"{winner_username} уже получал сегодня")
-                continue
+            log_draw(f"До розыгрыша: {int(hours)}ч {int(minutes)}м {int(seconds)}с")
 
-            if winner_username in ('@xquisite_corpse', '@AndreQA23'):
-                coupon = random.choice(COUPON_TYPES_MAN)
-            else:
-                coupon = random.choice(COUPON_TYPES_GIRL)
+            await asyncio.sleep(seconds_to_wait)
 
-            cursor.execute("""
-                INSERT INTO daily_draw (user_id, username, coupon_type, sent_date)
-                VALUES (?, ?, ?, ?)
-            """, (winner_id, winner_username, coupon, today))
-            conn.commit()
+            # === НАЧАЛО РОЗЫГРЫША ===
+            log_draw("=== НАЧАЛО РОЗЫГРЫША ===")
 
-            text = f"""🎉 ЕЖЕДНЕВНЫЙ РОЗЫГРЫШ 🎉
+            try:
+                # Создаем новое соединение для этой итерации
+                conn_local = sqlite3.connect('nyvaBot.db')
+                cursor_local = conn_local.cursor()
+                log_draw("Подключение к БД установлено")
+
+                # Получаем всех пользователей
+                cursor_local.execute("SELECT username, user_id FROM users")
+                users = cursor_local.fetchall()
+
+                log_draw(f"Найдено пользователей: {len(users)}")
+
+                if not users:
+                    log_draw("ОШИБКА: Нет пользователей для розыгрыша!")
+                    conn_local.close()
+                    continue
+
+                # Выбираем случайного победителя
+                winner_username, winner_id = random.choice(users)
+                log_draw(f"Случайный выбор: {winner_username} (ID: {winner_id})")
+
+                # Проверяем дату
+                today = datetime.now().strftime('%Y-%m-%d')
+                log_draw(f"Сегодняшняя дата: {today}")
+
+                # Проверяем, был ли сегодня розыгрыш у этого пользователя
+                cursor_local.execute("""
+                    SELECT id, sent_date FROM daily_draw 
+                    WHERE user_id = ? AND sent_date = ?
+                """, (winner_id, today))
+
+                existing_draw = cursor_local.fetchone()
+
+                if existing_draw:
+                    log_draw(f"Пользователь {winner_username} уже получал розыгрыш {existing_draw[1]}. Пропускаем.")
+                    conn_local.close()
+                    continue
+
+                # Выбираем купон в зависимости от пользователя
+                if winner_username in ('@xquisite_corpse', '@AndreQA23'):
+                    coupon = random.choice(COUPON_TYPES_MAN)
+                    log_draw(f"Выбран мужской купон: {coupon}")
+                else:
+                    coupon = random.choice(COUPON_TYPES_GIRL)
+                    log_draw(f"Выбран женский купон: {coupon}")
+
+                # Сохраняем в БД
+                cursor_local.execute("""
+                    INSERT INTO daily_draw (user_id, username, coupon_type, sent_date)
+                    VALUES (?, ?, ?, ?)
+                """, (winner_id, winner_username, coupon, today))
+                conn_local.commit()
+                log_draw(f"Данные сохранены в БД: {winner_username} -> {coupon[:50]}...")
+
+                # Формируем сообщение
+                text = f"""🎉 ЕЖЕДНЕВНЫЙ РОЗЫГРЫШ 🎉
 
 Победитель дня: {winner_username} 🔥
 Приз: {coupon}
 
 Действует 30 дней • {datetime.now().strftime('%d.%m.%Y')}"""
 
-            await bot.send_message(-4909725043, text)
-            print(f"Розыгрыш отправлен → {winner_username}")
+                # Отправляем в группу
+                try:
+                    await bot.send_message(-4909725043, text)
+                    log_draw(f"Сообщение успешно отправлено в группу (-4909725043)")
+                    log_draw(f"ПОБЕДИТЕЛЬ: {winner_username}")
+                    log_draw(f"ПРИЗ: {coupon}")
+                except Exception as send_error:
+                    log_draw(f"ОШИБКА отправки в группу: {send_error}")
+                    # Пробуем отправить себе для диагностики
+                    try:
+                        await bot.send_message(
+                            chat_id=1197646514,  # Замени на свой ID
+                            text=f"❌ Ошибка отправки розыгрыша: {send_error}"
+                        )
+                    except:
+                        pass
 
-        except Exception as e:
-            print("Ошибка в розыгрыше:", e)
+                conn_local.close()
+                log_draw("Соединение с БД закрыто")
+
+            except sqlite3.Error as db_error:
+                log_draw(f"ОШИБКА БАЗЫ ДАННЫХ: {db_error}")
+            except Exception as draw_error:
+                log_draw(f"ОШИБКА В РОЗЫГРЫШЕ: {draw_error}")
+                import traceback
+                error_details = traceback.format_exc()
+                log_draw(f"Трассировка:\n{error_details}")
+
+            log_draw("=== ЗАВЕРШЕНИЕ РОЗЫГРЫША ===")
+
+        except asyncio.CancelledError:
+            log_draw("Задача розыгрыша отменена")
+            raise
+        except Exception as loop_error:
+            log_draw(f"КРИТИЧЕСКАЯ ОШИБКА ЦИКЛА: {loop_error}")
+            await asyncio.sleep(60)  # Пауза при критической ошибке
 
 
 # Функция проверки напоминаний (исправленная)
@@ -372,7 +469,8 @@ async def reminder_checker(bot: Bot):
 async def get_my_coupons(message: Message):
     username = f"@{message.from_user.username}"
     cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
-    result = cursor.fetchone()
+    print(cursor.fetchall())
+    result = cursor.fetchall()
     if result:
         await message.reply(f"У тебя есть купон \n{result[0]}")
     else:
