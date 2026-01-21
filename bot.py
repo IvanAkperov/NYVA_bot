@@ -17,6 +17,7 @@ router = Router()
 
 date = str(datetime.today()).split(" ")[0]
 bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
+chat_id = -4909725043
 dp = Dispatcher()
 DRAW_TIME = time(15, 50)
 
@@ -66,6 +67,8 @@ async def reply_horoscope(call):
 @dp.message(Command('quote_of_the_day'))
 async def send_random_quote(message: Message):
     quote = await asyncio.to_thread(get_quote_of_the_day)
+    await bot.send_chat_action(chat_id, 'typing')
+    await asyncio.sleep(3)
     await message.reply(quote)
 
 
@@ -77,6 +80,8 @@ async def process_horoscope(message: Message):
 @dp.message(Command('get_my_horoscope'))
 async def send_user_horoscope(message: Message):
     username = f"@{message.from_user.username}"
+    await bot.send_chat_action(chat_id, 'typing')
+    await asyncio.sleep(3)
     await message.reply(f"Гороскоп на {date}\n\n{get_horoscope_of_the_day(get_zodiac(username, cursor))}")
 
 
@@ -473,8 +478,12 @@ async def get_my_coupons(message: Message):
     cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
     result = cursor.fetchall()
     if result:
+        await bot.send_chat_action(chat_id, 'typing')
+        await asyncio.sleep(3)
         await message.reply(f"У тебя есть купон \n{result[0]}")
     else:
+        await bot.send_chat_action(chat_id, 'typing')
+        await asyncio.sleep(3)
         await message.reply(f"Купонов нет")
 
 
@@ -538,7 +547,8 @@ async def handle_interactive(message: Message):
             text = text[1:]
         username = message.from_user.username
         response_text = await send_message_from_mistral_bot(text, username)
-
+        await bot.send_chat_action(chat_id, 'typing')
+        await asyncio.sleep(3)
         await message.reply(response_text)
 
     except Exception as e:
@@ -547,7 +557,7 @@ async def handle_interactive(message: Message):
 
 
 
-dp.include_router(router)
+@dp.include_router(router)
 async def main():
     await asyncio.gather(
         dp.start_polling(bot),
