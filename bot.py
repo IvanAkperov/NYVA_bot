@@ -4,12 +4,12 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, BaseFilter
 from aiogram.types import Message, InputMediaAudio, CallbackQuery
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
-    get_random_exercise, exercises
+    get_random_exercise
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
-from mistral import send_message_from_mistral_bot, send_message_from_mistral_bot_nadya
+from mistral import send_message_from_mistral_bot
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -536,11 +536,9 @@ async def handle_interactive(message: Message):
 
         if text.startswith("/"):
             text = text[1:]
-        user_id = message.from_user.id
-        if user_id != 804014815:
-            response_text = await send_message_from_mistral_bot(text)
-        else:
-            response_text = await send_message_from_mistral_bot_nadya(text)
+        username = message.from_user.username
+        response_text = await send_message_from_mistral_bot(text, username)
+
         await message.reply(response_text)
 
     except Exception as e:
