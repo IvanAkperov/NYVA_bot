@@ -536,14 +536,14 @@ class ReplyToThisBotFilter(BaseFilter):
         me = await bot.get_me()
         return message.reply_to_message.from_user.id == me.id
 
-@router.message(lambda message: message.text and message.text.startswith("/"))
+@router.message(lambda message: message.text and message.text.startswith(("/", "Бот")))
 async def handle_interactive(message: Message):
     try:
         text = message.text or message.caption
         if not text:
             return
 
-        if text.startswith("/"):
+        if text.startswith("/") or text.startswith('Бот'):
             text = text[1:]
         username = message.from_user.username
         response_text = await send_message_from_mistral_bot(text, username)
@@ -557,7 +557,7 @@ async def handle_interactive(message: Message):
 
 
 
-@dp.include_router(router)
+dp.include_router(router)
 async def main():
     await asyncio.gather(
         dp.start_polling(bot),
