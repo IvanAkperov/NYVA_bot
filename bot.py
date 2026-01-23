@@ -539,7 +539,7 @@ async def send_good_night_message(bot: Bot):
             target += timedelta(days=1)
         seconds_to_wait = (target - now).total_seconds()
         await asyncio.sleep(seconds_to_wait)
-        await bot.send_message(chat_id=-4909725043,text="Фитоняшки, я спать, устал за сегодня. Тоже ложитесь? Всем спокойной ночи ❤️")
+        await bot.send_message(chat_id=-4909725043,text="Фитоняшки, я спать, устал за сегодня, Ваня опять меня редактировал! Тоже ложитесь? Всем спокойной ночи ❤️")
 
 
 async def send_horoscope_to_everyone(bot: Bot):
