@@ -531,6 +531,17 @@ async def send_morning_message(bot: Bot):
         for _, value in day.items():
             await bot.send_message(chat_id=-4909725043,text=value)
 
+async def send_good_night_message(bot: Bot):
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=23, minute=45, second=0, microsecond=0)
+        if now > target:
+            target += timedelta(days=1)
+        seconds_to_wait = (target - now).total_seconds()
+        await asyncio.sleep(seconds_to_wait)
+        await bot.send_message(chat_id=-4909725043,text="Фитоняшки, я спать, устал за сегодня. Тоже ложитесь? Всем спокойной ночи ❤️")
+
+
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
@@ -548,16 +559,6 @@ async def send_horoscope_to_everyone(bot: Bot):
         for user_id, username, zodiac in result:
             text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
             await bot.send_message(chat_id=-4909725043, text=text)
-
-
-class ReplyToThisBotFilter(BaseFilter):
-    async def __call__(self, message: Message) -> bool:
-        if not message.reply_to_message:
-            return False
-        if not message.reply_to_message.from_user:
-            return False
-        me = await bot.get_me()
-        return message.reply_to_message.from_user.id == me.id
 
 @router.message(lambda message: message.text and message.text.startswith(("/", "Бот")))
 async def handle_interactive(message: Message):
@@ -587,7 +588,8 @@ async def main():
         reminder_checker(bot),
         send_draw_to_user(bot),
         send_horoscope_to_everyone(bot),
-        send_morning_message(bot)
+        send_morning_message(bot),
+        send_good_night_message(bot)
     )
 
 
