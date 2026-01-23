@@ -1,7 +1,7 @@
-import sqlite3
-
-conn = sqlite3.connect('nyvaBot.db')
-cursor = conn.cursor()
+# import sqlite3
+#
+# conn = sqlite3.connect('nyvaBot.db')
+# cursor = conn.cursor()
 # cursor.execute("""
 # CREATE TABLE IF NOT EXISTS reminders (
 #     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -13,19 +13,19 @@ cursor = conn.cursor()
 # );
 # """)
 # cursor.execute("""DROP TABLE IF EXISTS daily_draw""")
-cursor.execute("""CREATE TABLE IF NOT EXISTS daily_draw (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    username TEXT NOT NULL,
-    coupon_type TEXT NOT NULL,
-    coupon_image_id TEXT,
-    sent_date DATE NOT NULL,
-    used BOOLEAN DEFAULT 0,
-    UNIQUE(user_id, sent_date)
-)""")
-
-
-
+# cursor.execute("""CREATE TABLE IF NOT EXISTS daily_draw (
+#     id INTEGER PRIMARY KEY AUTOINCREMENT,
+#     user_id INTEGER NOT NULL,
+#     username TEXT NOT NULL,
+#     coupon_type TEXT NOT NULL,
+#     coupon_image_id TEXT,
+#     sent_date DATE NOT NULL,
+#     used BOOLEAN DEFAULT 0,
+#     UNIQUE(user_id, sent_date)
+# )""")
+#
+#
+#
 # cursor.execute("""CREATE TABLE IF NOT EXISTS exercise (
 #     id INTEGER,
 #     user_id INTEGER,
@@ -62,15 +62,15 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS daily_draw (
 # cursor.execute("SELECT * FROM users")
 # for row in cursor.fetchall():
 #     print(row)
-
-
+#
+#
 # pop lose yourself eminem  CQACAgIAAxkBAAIBP2lrcw3dxp2pJbFRocJpFWW6EapQAAIbjAACtVBYS_VJjlvffdqjOAQ
 # cursor.execute("INSERT INTO music (genre, title, artist, file_id) VALUES (?, ?, ?, ?)", ('edm', 'Every time we touch', 'The plot in you', 'CQACAgIAAxkBAAIBqmlrppxK80GtTxZqCF-lwpSpfVLbAAJDkAACtVBgS4JXH752OxzaOAQ'))
 # conn.commit()
-def send_all_data_from_db():
-    data = cursor.execute("SELECT * FROM users").fetchall()
-    return data
-
+# def send_all_data_from_db():
+#     data = cursor.execute("SELECT * FROM users").fetchall()
+#     return data
+#
 # new_file_id = "CQACAgIAAxkBAAIBqmlrppxK80GtTxZqCF-lwpSpfVLbAAJDkAACtVBgS4JXH752OxzaOAQ"
 #
 # # Обновляем только по title
@@ -91,5 +91,5 @@ def send_all_data_from_db():
 #
 # conn.commit()
 # print(cursor.execute("""SELECT * FROM reminders;""").fetchall())
-
+#
 # cursor.execute("""ALTER TABLE reminders ADD COLUMN reply_message_id INTEGER;""")

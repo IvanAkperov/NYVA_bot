@@ -508,6 +508,16 @@ async def get_chat_id(message: Message):
     await message.reply(info, parse_mode="Markdown")
 
 
+async def send_morning_message(bot: Bot):
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        if now > target:
+            target += timedelta(days=1)
+        seconds_to_wait = (target - now).total_seconds()
+        await asyncio.sleep(seconds_to_wait)
+        await bot.send_message(chat_id=-4909725043,text='Доброе утро, друзья! Всем вам хорошей пятницы, всех люблю. Если что, всенда на связи :)')
+
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
@@ -563,7 +573,8 @@ async def main():
         dp.start_polling(bot),
         reminder_checker(bot),
         send_draw_to_user(bot),
-        send_horoscope_to_everyone(bot)
+        send_horoscope_to_everyone(bot),
+        send_morning_message(bot)
     )
 
 
