@@ -29,6 +29,17 @@ music_dict = {
     'metal': 'Метал',
     'edm': 'EDM'
 }
+weekday = {
+    0: {'Понедельник': 'С началом новой недели, друзья! Постарайтесь сегодня отдохнуть!'},
+    1: {'Вторник': 'С добрым вторником вас, ребята! @AndreQA23, а ты сегодня дома валяешься? Бегом обучаться системному анализу :)'},
+    2: {"Среда": 'Привет! Ровно середина рабочей недели, друзья, всем успехов!'},
+    3: {"Четверг": 'Доброе утро! Сегодня четверг, не за горами пятница и выходные, у вас всё получится!'},
+    4: {'Пятница': 'Поздравляю с наступившей пятницей, фитоняшки!  Доделывайте свои дела и вперед отдыхать!'},
+    5: {'Суббота': 'Всем доброе утро! Вы как, выспались? Какие планы на субботу? Обязательно сходите потренировать ноги, в частности @AndreQA23 :)'},
+    6: {'Воскресенье': 'Всем привет, ребята! Воскресенье день безделья, проваляйтесь сегодня в кроватке, всех люблю!'}
+}
+day = weekday[datetime.now().weekday()]
+
 
 @dp.message(Command('start'))
 async def start(message: Message):
@@ -511,12 +522,14 @@ async def get_chat_id(message: Message):
 async def send_morning_message(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        target = now.replace(hour=9, minute=00, second=0, microsecond=0)
         if now > target:
             target += timedelta(days=1)
         seconds_to_wait = (target - now).total_seconds()
         await asyncio.sleep(seconds_to_wait)
-        await bot.send_message(chat_id=-4909725043,text='Доброе утро, друзья! Всем вам хорошей пятницы, всех люблю. Если что, всенда на связи :)')
+
+        for _, value in day.items():
+            await bot.send_message(chat_id=-4909725043,text=value)
 
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
