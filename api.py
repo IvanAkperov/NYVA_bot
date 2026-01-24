@@ -64,7 +64,7 @@ def get_horoscope_of_the_day(sign):
     )
     text = " ".join(
         s.strip()
-        for s in wrapper.stripped_strings
+        for s in wrapper
         if len(s.strip()) > 50
     )
 

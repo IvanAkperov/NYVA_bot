@@ -38,7 +38,6 @@ weekday = {
     5: {'Суббота': 'Всем доброе утро! Вы как, выспались? Какие планы на субботу? Обязательно сходите потренировать ноги, в частности @AndreQA23 :)'},
     6: {'Воскресенье': 'Всем привет, ребята! Воскресенье день безделья, проваляйтесь сегодня в кроватке, всех люблю!'}
 }
-day = weekday[datetime.now().weekday()]
 
 
 @dp.message(Command('start'))
@@ -527,6 +526,7 @@ async def send_morning_message(bot: Bot):
             target += timedelta(days=1)
         seconds_to_wait = (target - now).total_seconds()
         await asyncio.sleep(seconds_to_wait)
+        day = weekday[datetime.now().weekday()]
 
         for _, value in day.items():
             await bot.send_message(chat_id=-4909725043,text=value)
