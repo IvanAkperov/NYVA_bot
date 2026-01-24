@@ -564,7 +564,7 @@ async def send_horoscope_to_everyone(bot: Bot):
 async def change_mode(message: Message):
     text = message.text.split(maxsplit=2)
     mode = text[1]
-    if mode in ('normal', 'drunk', 'npc', 'simp', 'toxic', 'depression'):
+    if mode in ('normal', 'drunk', 'npc', 'simp', 'toxic'):
         cursor.execute("UPDATE botmode SET mode = ? WHERE id = 1", (mode,))
         conn.commit()
         await message.answer(f"Режим был изменен на {mode}")
