@@ -9,7 +9,7 @@ from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
-from mistral import send_message_from_mistral_bot
+from mistral import send_message_from_mistral_bot, MODES
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -560,25 +560,43 @@ async def send_horoscope_to_everyone(bot: Bot):
             text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
             await bot.send_message(chat_id=-4909725043, text=text)
 
-@router.message(lambda message: message.text and message.text.startswith(("/", "Бот")))
+@dp.message(Command('mode'))
+async def change_mode(message: Message):
+    text = message.text.split(maxsplit=2)
+    mode = text[1]
+    if mode in ('normal', 'drunk', 'npc', 'unsure'):
+        cursor.execute("UPDATE botmode SET mode = ? WHERE id = 1", (mode,))
+        conn.commit()
+        await message.answer(f"Режим был изменен на {mode}")
+    else:
+        await message.answer(f"Такого режима у меня нет.")
+
+
+@router.message(lambda message: message.text and message.text.startswith(("Бот", 'бот')))
 async def handle_interactive(message: Message):
     try:
         text = message.text or message.caption
         if not text:
             return
 
-        if text.startswith("/") or text.startswith('Бот'):
-            text = text[1:]
-        username = message.from_user.username
-        response_text = await send_message_from_mistral_bot(text, username)
-        await bot.send_chat_action(chat_id, 'typing')
-        await asyncio.sleep(3)
+        if text.lower().startswith(('бот', 'Бот')):
+            text = text[3:].lstrip() if text[0].isupper() else text[1:].lstrip()
+
+        username = message.from_user.username or "аноним"
+
+        cursor.execute("""SELECT mode FROM botmode WHERE id = 1;""")
+        row = cursor.fetchone()
+        mode = row[0] if row else "normal"
+
+        response_text = await send_message_from_mistral_bot(text, username, mode)
+
+        await bot.send_chat_action(message.chat.id, 'typing')
+        await asyncio.sleep(2.2 + random.uniform(0.4, 1.3))
         await message.reply(response_text)
 
     except Exception as e:
         print(f"Mistral error in handler: {e}")
         await message.reply("⚠️ Бро, я сломался 😵")
-
 
 
 dp.include_router(router)
