@@ -2,7 +2,10 @@ import requests
 import random
 from translate import Translator
 from bs4 import BeautifulSoup
-
+import edge_tts
+import tempfile
+import os
+from io import BytesIO
 
 headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 YaBrowser/25.12.0.0 Safari/537.36'}
 
@@ -79,3 +82,20 @@ def get_tracks_by_genre(genre, cursor):
         ORDER BY id
     """, (genre,))
     return cursor.fetchall()
+
+
+async def text_to_speech(text: str) -> BytesIO:
+    communicate = edge_tts.Communicate(text=text, voice="ru-RU-SvetlanaNeural")
+
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        await communicate.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+        bio = BytesIO(data)
+        bio.seek(0)
+        return bio
+    finally:
+        os.unlink(tmp_path)

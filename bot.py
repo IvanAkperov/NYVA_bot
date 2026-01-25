@@ -2,9 +2,9 @@ import asyncio
 import random
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, BaseFilter
-from aiogram.types import Message, InputMediaAudio, CallbackQuery
+from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, BufferedInputFile
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
-    get_random_exercise
+    get_random_exercise, text_to_speech
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
@@ -12,7 +12,6 @@ import sqlite3
 from mistral import send_message_from_mistral_bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -577,9 +576,9 @@ async def change_mode(message: Message):
     mode = text[1]
     if mode in (
             'normal', 'toxic', 'simp', 'drunk', 'npc',
-            'mystic', 'edgy_teen', 'grandpa', 'gamer',
-            'corporate', 'conspiracy', 'ai_meltdown',
-            'zen', 'hype', 'villain', 'shitposter',
+            'mystic', 'edgy_teen', 'gamer',
+            'corporate', 'conspiracy',
+            'zen', 'villain',
             'detective', 'chaos'
     ):
         cursor.execute("UPDATE botmode SET mode = ? WHERE id = 1", (mode,))
@@ -640,15 +639,34 @@ async def handle_interactive(message: Message):
 
         username = message.from_user.username or "аноним"
 
+        # Получаем режим из базы
         cursor.execute("""SELECT mode FROM botmode WHERE id = 1;""")
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
 
         response_text = await send_message_from_mistral_bot(text, username, mode)
 
-        await bot.send_chat_action(message.chat.id, 'typing')
-        await asyncio.sleep(2.2 + random.uniform(0.4, 1.3))
-        await message.reply(response_text)
+        if 'аудио' in text.lower():
+            response_text = response_text.replace("*", '')
+            audio = await text_to_speech(response_text)
+            voice_bytes = audio.getvalue()  # bytes
+            voice_file = BufferedInputFile(
+                file=voice_bytes,
+                filename="voice.ogg"
+            )
+            await bot.send_chat_action(message.chat.id, 'record_voice')
+            await asyncio.sleep(2 + random.uniform(0.4, 1.3))
+            await message.answer_voice(voice=voice_file)
+        else:
+            await bot.send_chat_action(message.chat.id, 'typing')
+            await asyncio.sleep(1 + random.uniform(0.4, 1.3))
+
+            await message.reply(response_text)
+
+    except Exception as e:
+        print(f"Mistral error in handler: {e}")
+
+
 
     except Exception as e:
         print(f"Mistral error in handler: {e}")

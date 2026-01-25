@@ -315,7 +315,7 @@ def _mistral_sync_call(text: str, username, mode: str) -> str:
 """.strip()
 
     response = client.chat(
-        model="mistral-large-latest",          # или mistral-small-latest
+        model="mistral-small-latest",          # или mistral-small-latest
         messages=[
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=text),
@@ -327,5 +327,5 @@ def _mistral_sync_call(text: str, username, mode: str) -> str:
     return response.choices[0].message.content.strip()
 
 
-async def send_message_from_mistral_bot(text: str, username, mode) -> str:
+async def send_message_from_mistral_bot(text, username, mode):
     return await asyncio.to_thread(_mistral_sync_call, text, username, mode)
