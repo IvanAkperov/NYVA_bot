@@ -9,7 +9,10 @@ from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
-from mistral import send_message_from_mistral_bot, MODES
+from mistral import send_message_from_mistral_bot
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -20,6 +23,12 @@ bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
 chat_id = -4909725043
 dp = Dispatcher()
 DRAW_TIME = time(15, 50)
+
+
+class TrainingRecord(StatesGroup):
+    exercise = State()
+    weight = State()
+    amount = State()
 
 music_dict = {
     'rock': 'Рок',
@@ -38,6 +47,8 @@ weekday = {
     5: {'Суббота': 'Всем доброе утро! Вы как, выспались? Какие планы на субботу? Обязательно сходите потренировать ноги, в частности @AndreQA23 :)'},
     6: {'Воскресенье': 'Всем привет, ребята! Воскресенье день безделья, проваляйтесь сегодня в кроватке, всех люблю!'}
 }
+
+
 
 
 @dp.message(Command('start'))
@@ -529,7 +540,7 @@ async def send_morning_message(bot: Bot):
         day = weekday[datetime.now().weekday()]
 
         for _, value in day.items():
-            await bot.send_message(chat_id=-4909725043,text=value)
+            await bot.send_message(chat_id=-4909725043,text=value, disable_notification=True)
 
 async def send_good_night_message(bot: Bot):
     while True:
@@ -539,7 +550,7 @@ async def send_good_night_message(bot: Bot):
             target += timedelta(days=1)
         seconds_to_wait = (target - now).total_seconds()
         await asyncio.sleep(seconds_to_wait)
-        await bot.send_message(chat_id=-4909725043,text="Фитоняшки, я спать, устал за сегодня, Ваня опять меня редактировал! Тоже ложитесь? Всем спокойной ночи ❤️")
+        await bot.send_message(chat_id=-4909725043,text="Фитоняшки, я спать, устал за сегодня, Ваня опять меня редактировал! Тоже ложитесь? Всем спокойной ночи ❤️", disable_notification=True)
 
 
 async def send_horoscope_to_everyone(bot: Bot):
@@ -577,6 +588,45 @@ async def change_mode(message: Message):
     else:
         await message.answer(f"Такого режима у меня нет.")
 
+
+@router.message(Command('record'))
+async def create_record(message: Message, state: FSMContext):
+    await state.set_state(TrainingRecord.exercise)
+    await message.reply('Новый рекорд? Отлично! Напиши упражнение')
+
+@router.message(TrainingRecord.exercise)
+async def process_exercise(message: Message, state: FSMContext) -> None:
+    await state.update_data(exercise=message.text)
+    await state.set_state(TrainingRecord.weight)
+    await message.answer("Какой был вес в кг?:")
+@router.message(TrainingRecord.weight)
+async def process_weight(message: Message, state: FSMContext) -> None:
+    await state.update_data(weight=message.text)
+    await state.set_state(TrainingRecord.amount)
+    await message.answer("Сколько повторений?")
+@router.message(TrainingRecord.amount)
+async def process_amount(message: Message, state: FSMContext) -> None:
+    await state.update_data(amount=message.text)
+    data = await state.get_data()
+    exercise = data['exercise']
+    weight = data['weight']
+    amount = data['amount']
+    await state.clear()
+    username = f"@{message.from_user.username}"
+    cursor.execute("""INSERT INTO records (username, exercise, weight, amount) VALUES (?, ?, ?, ?)""", (username, exercise, weight, amount))
+    conn.commit()
+    await message.answer(f"Добавил в базу твой рекорд - {exercise} {weight}x{amount}")
+
+
+@dp.message(Command('get_my_records'))
+async def get_my_records(message: Message):
+    username = f"@{message.from_user.username}"
+    cursor.execute("""SELECT exercise, weight, amount FROM records WHERE username = ?""", (username,))
+    result = cursor.fetchall()
+    text = "Твои рекорды:\n\n"
+    for exercise, weight, amount in result:
+        text += f"• {exercise}: {weight} кг × {amount}\n"
+    await message.reply(text)
 
 @router.message(lambda message: message.text and message.text.startswith(("Бот", 'бот')))
 async def handle_interactive(message: Message):
