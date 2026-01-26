@@ -641,6 +641,7 @@ async def change_voice(call: CallbackQuery):
     conn.commit()
     await call.message.answer(f"Выбрана озвучка {voice}")
     await call.answer()
+    await call.message.delete()
 
 
 @router.message(lambda message: message.text and message.text.startswith(("Бот", 'бот')))
