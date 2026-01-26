@@ -84,8 +84,8 @@ def get_tracks_by_genre(genre, cursor):
     return cursor.fetchall()
 
 
-async def text_to_speech(text: str) -> BytesIO:
-    communicate = edge_tts.Communicate(text=text, voice="ru-RU-SvetlanaNeural")
+async def text_to_speech(text: str, voice) -> BytesIO:
+    communicate = edge_tts.Communicate(text=text, voice=voice)
 
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
         await communicate.save(tmp.name)

@@ -1,3 +1,4 @@
+from datetime import datetime
 from gc import callbacks
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -66,3 +67,10 @@ def exercise_kb(exercise):
     ])
 
     return kb
+
+def voice_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text='Светлана', callback_data='voice_ru-RU-SvetlanaNeural'),
+            InlineKeyboardButton(text='Дмитрий', callback_data='voice_ru-RU-DmitryNeural'),
+        ]])

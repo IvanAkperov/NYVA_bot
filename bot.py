@@ -7,7 +7,7 @@ from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, Bu
 from anecdotes import get_random_anectode
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
     get_random_exercise, text_to_speech
-from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
+from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb, voice_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
@@ -629,6 +629,20 @@ async def get_my_records(message: Message):
         text += f"• {exercise}: {weight} кг × {amount}\n"
     await message.reply(text)
 
+
+@dp.message(Command('voice'))
+async def select_voice(message: Message):
+    await message.answer("Выберите озвучку", reply_markup=voice_kb())
+
+@dp.callback_query(lambda c: c.data.startswith('voice_'))
+async def change_voice(call: CallbackQuery):
+    voice = call.data.replace("voice_", '')
+    cursor.execute("""UPDATE voice set current_voice = ? WHERE id = ?""", (voice, 1))
+    conn.commit()
+    await call.message.answer(f"Выбрана озвучка {voice}")
+    await call.answer()
+
+
 @router.message(lambda message: message.text and message.text.startswith(("Бот", 'бот')))
 async def handle_interactive(message: Message):
     try:
@@ -645,12 +659,15 @@ async def handle_interactive(message: Message):
         cursor.execute("""SELECT mode FROM botmode WHERE id = 1;""")
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
+        cursor.execute("""SELECT current_voice FROM voice""")
+        row2 = cursor.fetchone()
+        voice = row2[0]
 
         response_text = await send_message_from_mistral_bot(text, username, mode)
 
         if 'аудио' in text.lower():
             response_text = response_text.replace("*", '')
-            audio = await text_to_speech(response_text)
+            audio = await text_to_speech(response_text, voice)
             voice_bytes = audio.getvalue()  # bytes
             voice_file = BufferedInputFile(
                 file=voice_bytes,
@@ -661,7 +678,7 @@ async def handle_interactive(message: Message):
             await message.answer_voice(voice=voice_file)
         elif 'анекдот' in text.lower():
             joke = get_random_anectode()
-            audio = await text_to_speech(joke)
+            audio = await text_to_speech(joke, voice)
             voice_bytes = audio.getvalue()  # bytes
             voice_file = BufferedInputFile(
                 file=voice_bytes,
@@ -677,6 +694,7 @@ async def handle_interactive(message: Message):
             await message.reply(response_text)
 
     except Exception as e:
+        await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")
         print(f"Mistral error in handler: {e}")
 
 
