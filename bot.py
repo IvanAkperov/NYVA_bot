@@ -3,6 +3,8 @@ import random
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, BaseFilter
 from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, BufferedInputFile
+
+from anecdotes import get_random_anectode
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
     get_random_exercise, text_to_speech
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb
@@ -649,6 +651,17 @@ async def handle_interactive(message: Message):
         if 'аудио' in text.lower():
             response_text = response_text.replace("*", '')
             audio = await text_to_speech(response_text)
+            voice_bytes = audio.getvalue()  # bytes
+            voice_file = BufferedInputFile(
+                file=voice_bytes,
+                filename="voice.ogg"
+            )
+            await bot.send_chat_action(message.chat.id, 'record_voice')
+            await asyncio.sleep(2 + random.uniform(0.4, 1.3))
+            await message.answer_voice(voice=voice_file)
+        elif 'анекдот' in text.lower():
+            joke = get_random_anectode()
+            audio = await text_to_speech(joke)
             voice_bytes = audio.getvalue()  # bytes
             voice_file = BufferedInputFile(
                 file=voice_bytes,
