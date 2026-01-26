@@ -24,6 +24,7 @@ bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
 chat_id = -4909725043
 dp = Dispatcher()
 DRAW_TIME = time(15, 50)
+name = {'@nadya_teacher13': "Надя", "@xquisite_corpse": "Ваня", "@YuliyaAkperova": "Юля", "@AndreQA23": "Андрей"}
 
 
 class TrainingRecord(StatesGroup):
@@ -575,6 +576,8 @@ async def send_horoscope_to_everyone(bot: Bot):
 @dp.message(Command('mode'))
 async def change_mode(message: Message):
     text = message.text.split(maxsplit=2)
+    username = f"@{message.from_user.username}"
+    answer_to_name = name[username]
     mode = text[1]
     if mode in (
             'normal', 'toxic', 'simp', 'drunk', 'npc',
@@ -583,11 +586,11 @@ async def change_mode(message: Message):
             'zen', 'villain',
             'detective', 'chaos'
     ):
-        cursor.execute("UPDATE botmode SET mode = ? WHERE id = 1", (mode,))
+        cursor.execute("UPDATE users SET mode = ? WHERE username = ?", (mode, username))
         conn.commit()
-        await message.answer(f"Режим был изменен на {mode}")
+        await message.answer(f"{answer_to_name}, твой режим - {mode}. Наслаждайся!")
     else:
-        await message.answer(f"Такого режима у меня нет.")
+        await message.answer(f"{answer_to_name}, такого режима у меня нет.")
 
 
 @router.message(Command('record'))
@@ -655,9 +658,10 @@ async def handle_interactive(message: Message):
             text = text[3:].lstrip() if text[0].isupper() else text[1:].lstrip()
 
         username = message.from_user.username or "аноним"
+        username_full = f"@{username}"
 
         # Получаем режим из базы
-        cursor.execute("""SELECT mode FROM botmode WHERE id = 1;""")
+        cursor.execute("""SELECT mode FROM users WHERE username = ?;""", (username_full,))
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
         cursor.execute("""SELECT current_voice FROM voice""")
