@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, time
 import sqlite3
 from mistral import send_message_from_mistral_bot
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.state import State, StatesGroup, default_state
 
 conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -599,7 +599,7 @@ async def create_record(message: Message, state: FSMContext):
     await message.reply('Новый рекорд? Отлично! Напиши упражнение')
 
 
-@dp.message_handler(commands=['cancel', 'отмена'], state='*')
+@router.message(Command("cancel", "отмена", "стоп"), ~F.state == default_state)
 async def cancel_handler(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
