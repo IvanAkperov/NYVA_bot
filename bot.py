@@ -598,6 +598,16 @@ async def create_record(message: Message, state: FSMContext):
     await state.set_state(TrainingRecord.exercise)
     await message.reply('Новый рекорд? Отлично! Напиши упражнение')
 
+
+@dp.message_handler(commands=['cancel', 'отмена'], state='*')
+async def cancel_handler(message: Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer("Нет активного состояния для отмены")
+        return
+
+    await state.finish()  # Сброс состояния
+    await message.answer("Похуй, потом запишем тогда")
 @router.message(TrainingRecord.exercise)
 async def process_exercise(message: Message, state: FSMContext) -> None:
     await state.update_data(exercise=message.text)
