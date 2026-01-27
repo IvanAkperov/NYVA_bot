@@ -42,7 +42,7 @@ music_dict = {
 }
 weekday = {
     0: {'Понедельник': 'С началом новой недели, друзья! Постарайтесь сегодня отдохнуть!'},
-    1: {'Вторник': 'С добрым вторником вас, ребята! @AndreQA23, а ты сегодня дома валяешься? Бегом обучаться системному анализу :)'},
+    1: {'Вторник': 'С добрым вторником вас, ребята! @AndreQA23, а ты сегодня дома валяешься? Отдыхай, бро!'},
     2: {"Среда": 'Привет! Ровно середина рабочей недели, друзья, всем успехов!'},
     3: {"Четверг": 'Доброе утро! Сегодня четверг, не за горами пятница и выходные, у вас всё получится!'},
     4: {'Пятница': 'Поздравляю с наступившей пятницей, фитоняшки!  Доделывайте свои дела и вперед отдыхать!'},
@@ -569,7 +569,7 @@ async def send_horoscope_to_everyone(bot: Bot):
         await asyncio.sleep(seconds_to_wait)
         cursor.execute("SELECT * FROM users;")
         result = cursor.fetchall()
-        for user_id, username, zodiac in result:
+        for user_id, username, zodiac, mode in result:
             text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
             await bot.send_message(chat_id=-4909725043, text=text)
 
