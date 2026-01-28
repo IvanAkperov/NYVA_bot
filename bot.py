@@ -679,12 +679,11 @@ async def handle_interactive(message: Message):
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
         if mode == 'toxic':
-            CLOWN_CHANCE = 1  # 10%
-            TARGET_USER_ID = 1197646514  # ID целевого пользователя
+            CLOWN_CHANCE = 0.8  # 10%
 
             # Проверяем, это целевой пользователь И выпал шанс
             should_send_clown = (
-                    message.from_user.id == TARGET_USER_ID and
+                    message.from_user.id == message.from_user.id and
                     random.random() < CLOWN_CHANCE
             )
 
