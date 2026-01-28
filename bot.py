@@ -2,7 +2,7 @@ import asyncio
 import random
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, BaseFilter
-from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, BufferedInputFile
+from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, BufferedInputFile, ReactionTypeEmoji
 
 from anecdotes import get_random_anectode
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
@@ -668,7 +668,6 @@ async def handle_interactive(message: Message):
         text = message.text or message.caption
         if not text:
             return
-
         if text.lower().startswith(('бот', 'Бот')):
             text = text[3:].lstrip() if text[0].isupper() else text[1:].lstrip()
 
@@ -679,6 +678,28 @@ async def handle_interactive(message: Message):
         cursor.execute("""SELECT mode FROM users WHERE username = ?;""", (username_full,))
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
+        if mode == 'toxic':
+            CLOWN_CHANCE = 1  # 10%
+            TARGET_USER_ID = 1197646514  # ID целевого пользователя
+
+            # Проверяем, это целевой пользователь И выпал шанс
+            should_send_clown = (
+                    message.from_user.id == TARGET_USER_ID and
+                    random.random() < CLOWN_CHANCE
+            )
+
+            if should_send_clown:
+                try:
+                    await bot.set_message_reaction(
+                        chat_id=message.chat.id,
+                        message_id=message.message_id,
+                        reaction=[ReactionTypeEmoji(emoji="🤡")],
+                        is_big=True
+                    )
+                    # Можно добавить задержку для драматичности
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    print(f"Ошибка реакции клоуна: {e}")
         cursor.execute("""SELECT current_voice FROM voice""")
         row2 = cursor.fetchone()
         voice = row2[0]
