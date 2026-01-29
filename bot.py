@@ -659,7 +659,7 @@ async def change_voice(call: CallbackQuery):
 
 @dp.callback_query(lambda d: d.data == 'delete')
 async def delete_bot_message(call: CallbackQuery):
-    await call.message.delete()
+    await call.message.edit_text('Сообщение удалено.')
 
 
 @router.message(
