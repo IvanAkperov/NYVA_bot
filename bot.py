@@ -7,7 +7,8 @@ from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, Bu
 from anecdotes import get_random_anectode
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
     get_random_exercise, text_to_speech
-from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb, voice_kb
+from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb, voice_kb, \
+    delete_message_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
@@ -656,6 +657,10 @@ async def change_voice(call: CallbackQuery):
     await call.answer()
     await call.message.delete()
 
+@dp.callback_query(lambda d: d.data == 'delete')
+async def delete_bot_message(call: CallbackQuery):
+    await call.message.delete()
+
 
 @router.message(
     lambda message: (
@@ -679,9 +684,7 @@ async def handle_interactive(message: Message):
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
         if mode == 'toxic':
-            CLOWN_CHANCE = 0.8  # 10%
-
-            # Проверяем, это целевой пользователь И выпал шанс
+            CLOWN_CHANCE = 0.8
             should_send_clown = (
                     message.from_user.id == message.from_user.id and
                     random.random() < CLOWN_CHANCE
@@ -695,7 +698,6 @@ async def handle_interactive(message: Message):
                         reaction=[ReactionTypeEmoji(emoji="🤡")],
                         is_big=True
                     )
-                    # Можно добавить задержку для драматичности
                     await asyncio.sleep(0.5)
                 except Exception as e:
                     print(f"Ошибка реакции клоуна: {e}")
@@ -731,7 +733,7 @@ async def handle_interactive(message: Message):
             await bot.send_chat_action(message.chat.id, 'typing')
             await asyncio.sleep(1 + random.uniform(0.4, 1.3))
 
-            await message.reply(response_text)
+            await message.reply(response_text, reply_markup=delete_message_kb())
 
     except Exception as e:
         await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")

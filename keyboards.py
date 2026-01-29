@@ -74,3 +74,6 @@ def voice_kb():
             InlineKeyboardButton(text='Светлана', callback_data='voice_ru-RU-SvetlanaNeural'),
             InlineKeyboardButton(text='Дмитрий', callback_data='voice_ru-RU-DmitryNeural'),
         ]])
+
+def delete_message_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Удалить сообщение', callback_data='delete')]])
