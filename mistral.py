@@ -298,7 +298,7 @@ MODES = {
     },
 }
 
-def _mistral_sync_call(text: str, username, mode: str) -> str:
+def _mistral_sync_call(text: str, username, mode: str, history) -> str:
     mode_config = MODES.get(mode, MODES["normal"])
     persona = PERSONAS.get(username, "")
 
@@ -312,20 +312,32 @@ def _mistral_sync_call(text: str, username, mode: str) -> str:
 {persona.strip()}
 
 Отвечай ТОЛЬКО от лица бота в этом режиме. Если человек просит мотивацию, отдавайся на 100% в поддержке. Никаких пояснений, никаких "я в режиме drunk".
+Если факт или шутка уже были использованы ранее в диалоге — не повторяй их снова без причины.
 """.strip()
 
+    messages = [
+        ChatMessage(role="system", content=system_prompt)
+    ]
+
+    for role, content in history:
+        messages.append(
+            ChatMessage(role=role, content=content)
+        )
+
+    messages.append(
+        ChatMessage(role="user", content=text)
+    )
+
     response = client.chat(
-        model="mistral-small-latest",          # или mistral-small-latest
-        messages=[
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=text),
-        ],
+        model="mistral-small-latest",
+        messages=messages,
         temperature=mode_config["temperature"],
         top_p=mode_config.get("top_p", 0.95),
         max_tokens=mode_config["max_tokens"],
     )
+
     return response.choices[0].message.content.strip()
 
 
-async def send_message_from_mistral_bot(text, username, mode):
-    return await asyncio.to_thread(_mistral_sync_call, text, username, mode)
+async def send_message_from_mistral_bot(text, username, mode, history):
+    return await asyncio.to_thread(_mistral_sync_call, text, username, mode, history)

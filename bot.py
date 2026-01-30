@@ -676,8 +676,14 @@ async def handle_interactive(message: Message):
         if text.lower().startswith(('бот', 'Бот')):
             text = text[3:].lstrip() if text[0].isupper() else text[1:].lstrip()
 
+
         username = message.from_user.username or "аноним"
         username_full = f"@{username}"
+        cursor.execute(
+            "INSERT INTO messages (username, role, content) VALUES (?, ?, ?)",
+            (username, "user", text)
+        )
+        conn.commit()
 
         # Получаем режим из базы
         cursor.execute("""SELECT mode FROM users WHERE username = ?;""", (username_full,))
@@ -704,9 +710,24 @@ async def handle_interactive(message: Message):
         cursor.execute("""SELECT current_voice FROM voice""")
         row2 = cursor.fetchone()
         voice = row2[0]
-
-        response_text = await send_message_from_mistral_bot(text, username, mode)
-
+        cursor.execute(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE username = ?
+            ORDER BY id DESC
+            LIMIT 3
+            """,
+            (username,)
+        )
+        rows = cursor.fetchall()
+        history = list(reversed(rows))
+        response_text = await send_message_from_mistral_bot(
+            text=text,
+            username=username,
+            mode=mode,
+            history=history
+        )
         if 'аудио' in text.lower():
             response_text = response_text.replace("*", '')
             audio = await text_to_speech(response_text, voice)
