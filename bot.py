@@ -716,7 +716,7 @@ async def handle_interactive(message: Message):
             FROM messages
             WHERE username = ?
             ORDER BY id DESC
-            LIMIT 3
+            LIMIT 1
             """,
             (username,)
         )
