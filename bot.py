@@ -585,11 +585,12 @@ async def change_mode(message: Message):
             'mystic', 'edgy_teen', 'gamer',
             'corporate', 'conspiracy',
             'zen', 'villain',
-            'detective', 'chaos'
+            'detective', 'chaos',
+            'random'
     ):
         cursor.execute("UPDATE users SET mode = ? WHERE username = ?", (mode, username))
         conn.commit()
-        await message.answer(f"{answer_to_name}, твой режим - {mode}. Наслаждайся!")
+        await message.answer(f"{answer_to_name}, твой режим - {mode}. {'Наслаждайся!' if mode != 'random' else 'Тебе пиздец'}")
     else:
         await message.answer(f"{answer_to_name}, такого режима у меня нет.")
 
@@ -687,8 +688,17 @@ async def handle_interactive(message: Message):
 
         # Получаем режим из базы
         cursor.execute("""SELECT mode FROM users WHERE username = ?;""", (username_full,))
+
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
+        extra_message = ''
+        if mode == 'random':
+            mode = random.choice(['normal', 'toxic', 'simp', 'drunk', 'npc',
+            'mystic', 'edgy_teen', 'gamer',
+            'corporate', 'conspiracy',
+            'zen', 'villain',
+            'detective', 'chaos'])
+            extra_message = f'Отправлено в режиме {mode}'
         if mode == 'toxic':
             CLOWN_CHANCE = 0.8
             should_send_clown = (
@@ -754,7 +764,7 @@ async def handle_interactive(message: Message):
             await bot.send_chat_action(message.chat.id, 'typing')
             await asyncio.sleep(1 + random.uniform(0.4, 1.3))
 
-            await message.reply(response_text, reply_markup=delete_message_kb())
+            await message.reply(f"{response_text}\n\n{extra_message}", reply_markup=delete_message_kb())
 
     except Exception as e:
         await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")
