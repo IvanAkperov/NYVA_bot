@@ -586,7 +586,7 @@ async def change_mode(message: Message):
             'corporate', 'conspiracy',
             'zen', 'villain',
             'detective', 'chaos',
-            'random'
+            'random', 'horny'
     ):
         cursor.execute("UPDATE users SET mode = ? WHERE username = ?", (mode, username))
         conn.commit()
