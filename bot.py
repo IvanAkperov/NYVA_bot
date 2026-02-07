@@ -601,6 +601,7 @@ async def process_user(call: CallbackQuery, state: FSMContext):
     await call.message.answer(f"Выбран пользователь: {data}")
     await call.message.answer("Какой факт запишем?")
     await call.answer()
+    await call.delete()
 
 
 @router.message(UserFact.fact)
