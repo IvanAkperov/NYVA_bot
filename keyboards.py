@@ -77,3 +77,9 @@ def voice_kb():
 
 def delete_message_kb():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Удалить сообщение', callback_data='delete')]])
+
+def username_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Надя', callback_data='user_@nadya_teacher13'),
+                                                  InlineKeyboardButton(text='Ваня', callback_data='user_@xquisite_corpse')],
+                                                  [InlineKeyboardButton(text='Юля', callback_data='user_@YuliyaAkperova'),
+                                                  InlineKeyboardButton(text='Андрей', callback_data='user_@AndreQA23')]])

@@ -8,7 +8,7 @@ from anecdotes import get_random_anectode
 from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
     get_random_exercise, text_to_speech
 from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb, voice_kb, \
-    delete_message_kb
+    delete_message_kb, username_kb
 from help_text import greeting_text
 from datetime import datetime, timedelta, time
 import sqlite3
@@ -32,6 +32,11 @@ class TrainingRecord(StatesGroup):
     exercise = State()
     weight = State()
     amount = State()
+
+
+class UserFact(StatesGroup):
+    user = State()
+    fact = State()
 
 music_dict = {
     'rock': 'Рок',
@@ -583,6 +588,40 @@ async def change_mode(message: Message):
     else:
         await message.answer(f"{answer_to_name}, такого режима у меня нет.")
 
+@router.message(Command('fact'))
+async def create_fact(message: Message, state: FSMContext):
+    await state.set_state(UserFact.user)
+    await message.reply("Запишем новый факт. О ком записываем инфу?", reply_markup=username_kb())
+
+@router.callback_query(lambda c: c.data.startswith('user_'), UserFact.user)
+async def process_user(call: CallbackQuery, state: FSMContext):
+    data = call.data.replace("user_", '')
+    await state.update_data(user=data)
+    await state.set_state(UserFact.fact)
+    await call.message.answer(f"Выбран пользователь: {data}")
+    await call.message.answer("Какой факт запишем?")
+    await call.answer()
+
+
+@router.message(UserFact.fact)
+async def process_fact(message: Message, state: FSMContext) -> None:
+    await state.update_data(fact=message.text)
+    data = await state.get_data()
+    user = data['user']
+    fact = data['fact'] + '.'
+    await state.clear()
+    cursor.execute('''
+        UPDATE users 
+        SET extra_info = CASE 
+            WHEN extra_info IS NULL OR extra_info = '' THEN ?
+            ELSE extra_info || '\n' || ?
+        END
+        WHERE username = ?
+    ''', (fact, fact, user))
+    conn.commit()
+    await message.answer(f"Добавил факт - {user} {fact}")
+
+
 
 @router.message(Command('record'))
 async def create_record(message: Message, state: FSMContext):
@@ -676,10 +715,11 @@ async def handle_interactive(message: Message):
         conn.commit()
 
         # Получаем режим из базы
-        cursor.execute("""SELECT mode FROM users WHERE username = ?;""", (username_full,))
+        cursor.execute("""SELECT mode, extra_info FROM users WHERE username = ?;""", (username_full,))
 
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
+        extra_info = row[1]
         extra_message = ''
         if mode == 'random':
             mode = random.choice(['normal', 'toxic', 'simp', 'drunk', 'npc',
@@ -721,11 +761,13 @@ async def handle_interactive(message: Message):
         )
         rows = cursor.fetchall()
         history = list(reversed(rows))
+
         response_text = await send_message_from_mistral_bot(
             text=text,
             username=username,
             mode=mode,
-            history=history
+            history=history,
+            extra_info=extra_info
         )
         if 'аудио' in text.lower():
             response_text = response_text.replace("*", '')
@@ -764,6 +806,12 @@ async def handle_interactive(message: Message):
     except Exception as e:
         print(f"Mistral error in handler: {e}")
         await message.reply("⚠️ Бро, я сломался 😵")
+
+
+
+
+
+
 @router.message(lambda m: m.photo and m.caption and "бот оцени" in m.caption.lower())
 async def handle_photo_analysis(message: Message):
     try:

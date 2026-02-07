@@ -315,12 +315,33 @@ MODES = {
     },
 }
 
-def _mistral_sync_call(text: str, username, mode: str, history) -> str:
+
+def _mistral_sync_call(text: str, username, mode: str, history, extra_info) -> str:
     mode_config = MODES.get(mode, MODES["normal"])
     persona = PERSONAS.get(username, "")
 
+    # 1. Подготовка дополнительных фактов
+    facts_text = ""
+    if extra_info:
+        # Если extra_info это список кортежей (role, content)
+        if isinstance(extra_info, list):
+            facts_list = []
+            for role, content in extra_info:
+                if role == "assistant":  # Факты, которые бот добавил ранее
+                    facts_list.append(content)
+            if facts_list:
+                facts_text = "\n".join(facts_list)
+        # Если extra_info это строка (прямой факт)
+        elif isinstance(extra_info, str):
+            facts_text = extra_info
+
+    # 2. Обновляем WORLD_CONTEXT с дополнительными фактами
+    world_context_with_facts = WORLD_CONTEXT.strip()
+    if facts_text:
+        world_context_with_facts += f"\n\n--- ДОПОЛНИТЕЛЬНЫЕ ФАКТЫ ---\n{facts_text}\n--- КОНЕЦ ДОПОЛНИТЕЛЬНЫХ ФАКТОВ ---\n"
+
     system_prompt = f"""
-{WORLD_CONTEXT.strip()}
+{world_context_with_facts}
 
 Сейчас активный режим: {mode.upper()}
 
@@ -328,6 +349,7 @@ def _mistral_sync_call(text: str, username, mode: str, history) -> str:
 
 {persona.strip()}
 
+ВАЖНО: Учитывай все факты из раздела "ДОПОЛНИТЕЛЬНЫЕ ФАКТЫ" как часть твоих знаний о персонажах.
 Отвечай ТОЛЬКО от лица бота в этом режиме. Если человек просит мотивацию, отдавайся на 100% в поддержке. Никаких пояснений, никаких "я в режиме drunk".
 Если факт или шутка уже были использованы ранее в диалоге — не повторяй их снова без причины.
 """.strip()
@@ -336,11 +358,17 @@ def _mistral_sync_call(text: str, username, mode: str, history) -> str:
         ChatMessage(role="system", content=system_prompt)
     ]
 
+    # 3. Добавляем историю без дублирования фактов
     for role, content in history:
+        # Пропускаем сообщения, которые уже есть в фактах
+        if role == "assistant" and content in facts_text:
+            continue
         messages.append(
             ChatMessage(role=role, content=content)
         )
 
+    # 4. Не добавляем extra_info в историю, т.к. они уже в system_prompt
+    # Вместо этого добавляем только текущий запрос пользователя
     messages.append(
         ChatMessage(role="user", content=text)
     )
@@ -356,5 +384,5 @@ def _mistral_sync_call(text: str, username, mode: str, history) -> str:
     return response.choices[0].message.content.strip()
 
 
-async def send_message_from_mistral_bot(text, username, mode, history):
-    return await asyncio.to_thread(_mistral_sync_call, text, username, mode, history)
+async def send_message_from_mistral_bot(text, username, mode, history, extra_info):
+    return await asyncio.to_thread(_mistral_sync_call, text, username, mode, history, extra_info)
