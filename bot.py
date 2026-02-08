@@ -553,7 +553,7 @@ async def send_morning_message(bot: Bot):
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=12, minute=53, second=0, microsecond=0)
+        target = now.replace(hour=12, minute=55, second=0, microsecond=0)
 
         if now > target:
             target += timedelta(days=1)
@@ -564,7 +564,7 @@ async def send_horoscope_to_everyone(bot: Bot):
         await asyncio.sleep(seconds_to_wait)
         cursor.execute("SELECT * FROM users;")
         result = cursor.fetchall()
-        for user_id, username, zodiac, mode in result:
+        for user_id, username, zodiac, mode, extra_info in result:
             try:
                 text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
                 await bot.send_message(chat_id=-4909725043, text=text)
