@@ -553,7 +553,7 @@ async def send_morning_message(bot: Bot):
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=12, minute=55, second=0, microsecond=0)
+        target = now.replace(hour=10, minute=00, second=0, microsecond=0)
 
         if now > target:
             target += timedelta(days=1)
