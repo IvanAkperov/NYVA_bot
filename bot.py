@@ -553,7 +553,7 @@ async def send_morning_message(bot: Bot):
 async def send_horoscope_to_everyone(bot: Bot):
     while True:
         now = datetime.now()
-        target = now.replace(hour=10, minute=00, second=0, microsecond=0)
+        target = now.replace(hour=12, minute=53, second=0, microsecond=0)
 
         if now > target:
             target += timedelta(days=1)
@@ -565,9 +565,11 @@ async def send_horoscope_to_everyone(bot: Bot):
         cursor.execute("SELECT * FROM users;")
         result = cursor.fetchall()
         for user_id, username, zodiac, mode in result:
-            text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
-            await bot.send_message(chat_id=-4909725043, text=text)
-
+            try:
+                text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
+                await bot.send_message(chat_id=-4909725043, text=text)
+            except:
+                await bot.send_message(chat_id=4909725043, text='Простите, гороскоп не сработал')
 @dp.message(Command('mode'))
 async def change_mode(message: Message):
     text = message.text.split(maxsplit=2)
