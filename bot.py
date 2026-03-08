@@ -886,6 +886,14 @@ async def analyze_image_simple(image_bytes: bytes) -> str:
     reaction = random.choice(reactions)
     return f"Так, скачал. Размер файла {len(image_bytes)} KB. {reaction}"
 
+
+@dp.message(Command('lk'))
+async def send_message_from_lk(message: Message):
+    text = message.text
+    text = text.replace('/lk', '')
+    await bot.send_message(-4909725043, text)
+
+
 dp.include_router(router)
 async def main():
     await asyncio.gather(
