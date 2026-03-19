@@ -382,13 +382,25 @@ async def send_draw_to_user(bot: Bot):
                     continue
 
                 # Выбираем случайного победителя
-                winner_username = '@YuliyaAkperova'
-                winner_id = 1910197911
+                winner_username, winner_id = random.choice(users)
                 log_draw(f"Случайный выбор: {winner_username} (ID: {winner_id})")
 
                 # Проверяем дату
                 today = datetime.now().strftime('%Y-%m-%d')
                 log_draw(f"Сегодняшняя дата: {today}")
+
+                # Проверяем, был ли сегодня розыгрыш у этого пользователя
+                cursor_local.execute("""
+                    SELECT id, sent_date FROM daily_draw 
+                    WHERE user_id = ? AND sent_date = ?
+                """, (winner_id, today))
+
+                existing_draw = cursor_local.fetchone()
+
+                if existing_draw:
+                    log_draw(f"Пользователь {winner_username} уже получал розыгрыш {existing_draw[1]}. Пропускаем.")
+                    conn_local.close()
+                    continue
 
                 # Выбираем купон в зависимости от пользователя
                 if winner_username in ('@xquisite_corpse', '@AndreQA23'):
