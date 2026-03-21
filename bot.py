@@ -32,7 +32,7 @@ class TrainingRecord(StatesGroup):
     exercise = State()
     weight = State()
     amount = State()
-
+LmbAzdXN6AkV
 
 class UserFact(StatesGroup):
     user = State()
@@ -807,7 +807,8 @@ async def handle_interactive(message: Message):
 
     except Exception as e:
         await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")
-        print(f"Mistral error in handler: {e}")
+        with open("errors.txt", 'w', encoding='utf-8') as f:
+            f.write(str(e))
 
 
 
