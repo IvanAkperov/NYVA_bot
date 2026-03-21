@@ -21,7 +21,7 @@ cursor = conn.cursor()
 router = Router()
 
 date = str(datetime.today()).split(" ")[0]
-bot = Bot(token='8317293211:AAEVYAjfaKyyjBWgevA9srPSIvKMdKnrunA')
+bot = Bot(token='8317293211:AAGDKeLAB-1C3Xdsrcng-xcdXIo_quRUMKc')
 chat_id = -4909725043
 dp = Dispatcher()
 DRAW_TIME = time(15, 50)
