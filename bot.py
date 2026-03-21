@@ -32,7 +32,6 @@ class TrainingRecord(StatesGroup):
     exercise = State()
     weight = State()
     amount = State()
-LmbAzdXN6AkV
 
 class UserFact(StatesGroup):
     user = State()
@@ -727,7 +726,7 @@ async def handle_interactive(message: Message):
 
         row = cursor.fetchone()
         mode = row[0] if row else "normal"
-        extra_info = row[1]
+        extra_info = row[1] if row else ''
         extra_message = ''
         if mode == 'random':
             mode = random.choice(['normal', 'toxic', 'simp', 'drunk', 'npc',
