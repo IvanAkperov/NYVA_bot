@@ -755,7 +755,7 @@ async def handle_interactive(message: Message):
                     print(f"Ошибка реакции клоуна: {e}")
         cursor.execute("""SELECT current_voice FROM voice""")
         row2 = cursor.fetchone()
-        voice = row2[0]
+        voice = row2[0] if row2 else 'voice_ru-RU-SvetlanaNeural'
         cursor.execute(
             """
             SELECT role, content
