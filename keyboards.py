@@ -83,5 +83,3 @@ def username_kb():
                                                   InlineKeyboardButton(text='Ваня', callback_data='user_@xquisite_corpse')],
                                                   [InlineKeyboardButton(text='Юля', callback_data='user_@YuliyaAkperova'),
                                                   InlineKeyboardButton(text='Андрей', callback_data='user_@AIAND23')]])
-
-LmbAzdXN6AkV
