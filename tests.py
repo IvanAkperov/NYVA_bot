@@ -47,7 +47,7 @@
 # USERNAMES = {
 #     'ваня': '@xquisite_corpse',
 #     'юля': '@YuliyaAkperova',
-#     'андрей': '@AndreQA23',
+#     'андрей': '@AIAND23',
 #     'надя': '@nadya_teacher13'
 # }
 #
@@ -93,3 +93,4 @@
 # print(cursor.execute("""SELECT * FROM reminders;""").fetchall())
 #
 # cursor.execute("""ALTER TABLE reminders ADD COLUMN reply_message_id INTEGER;""")
+# Быстрая проверка в Python

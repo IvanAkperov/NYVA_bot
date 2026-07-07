@@ -908,7 +908,6 @@ async def main():
         reminder_checker(bot),
         send_draw_to_user(bot),
         send_horoscope_to_everyone(bot),
-        send_morning_message(bot),
     )
 
 
