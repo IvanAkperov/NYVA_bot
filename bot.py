@@ -727,6 +727,21 @@ async def handle_interactive(message: Message):
             (username, "user", text)
         )
         conn.commit()
+        cursor.execute("""
+            INSERT INTO chatting (
+                message_id,
+                user_id,
+                username,
+                message
+            )
+            VALUES (?, ?, ?, ?)
+        """, (
+            message.message_id,
+            message.from_user.id,
+            message.from_user.username or "unknown",
+            message.text
+        ))
+        conn.commit()
 
         # Получаем режим из базы
         cursor.execute("""SELECT mode, extra_info FROM users WHERE username = ?;""", (username_full,))
@@ -900,31 +915,6 @@ async def send_message_from_lk(message: Message):
     text = text.replace('/lk', '')
     await bot.send_message(-4909725043, text)
 
-
-@dp.message()
-async def save_chatting(message: Message):
-    if message.chat.id != -4909725043:
-        return
-
-    if not message.text:
-        return
-
-    cursor.execute("""
-        INSERT INTO chatting (
-            message_id,
-            user_id,
-            username,
-            message
-        )
-        VALUES (?, ?, ?, ?)
-    """, (
-        message.message_id,
-        message.from_user.id,
-        message.from_user.username or "unknown",
-        message.text
-    ))
-
-    conn.commit()
 
 @dp.message(Command("summary"))
 async def summary(message: Message):
