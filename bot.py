@@ -932,7 +932,27 @@ async def summary(message: Message):
         for username, msg in rows
     )
 
-    await message.answer(history[:4000])
+    answer = await send_message_from_mistral_bot(
+        text=f"""
+Сделай краткую сводку переписки друзей за день.
+
+Нужно:
+- основные темы
+- важные события
+- смешные моменты
+- планы и договоренности
+
+Переписка:
+
+{history}
+""",
+        username="summary",
+        mode="normal",
+        history=[],
+        extra_info=""
+    )
+
+    await message.answer(answer)
 
 dp.include_router(router)
 async def main():
