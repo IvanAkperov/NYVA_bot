@@ -901,6 +901,49 @@ async def send_message_from_lk(message: Message):
     await bot.send_message(-4909725043, text)
 
 
+@dp.message()
+async def save_chatting(message: Message):
+    if message.chat.id != -4909725043:
+        return
+
+    if not message.text:
+        return
+
+    cursor.execute("""
+        INSERT INTO chatting (
+            message_id,
+            user_id,
+            username,
+            message
+        )
+        VALUES (?, ?, ?, ?)
+    """, (
+        message.message_id,
+        message.from_user.id,
+        message.from_user.username or "unknown",
+        message.text
+    ))
+
+    conn.commit()
+
+@dp.message(Command("summary"))
+async def summary(message: Message):
+    cursor.execute("""
+        SELECT username, message
+        FROM chatting
+        WHERE date(sent_at) = date('now', 'localtime')
+        ORDER BY sent_at
+    """)
+
+    rows = cursor.fetchall()
+
+    history = "\n".join(
+        f"{username}: {msg}"
+        for username, msg in rows
+    )
+
+    await message.answer(history[:4000])
+
 dp.include_router(router)
 async def main():
     await asyncio.gather(
