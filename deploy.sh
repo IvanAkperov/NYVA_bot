@@ -51,19 +51,12 @@ if [ ! -f "$DATA_DIR/nyvaBot.db" ]; then
     if [ -f "$APP_DIR/nyvaBot.db" ]; then cp "$APP_DIR/nyvaBot.db" "$DATA_DIR/nyvaBot.db"; fi
 fi
 if [ ! -f "$DATA_DIR/.env" ]; then
-    read -rp  "BOT_TOKEN: " BOT_TOKEN
-    read -rp  "MISTRAL_API_KEY: " MISTRAL_API_KEY
-    read -rp  "GROUP_CHAT_ID [-4909725043]: " GROUP_CHAT_ID; GROUP_CHAT_ID=${GROUP_CHAT_ID:--4909725043}
-    read -rp  "ADMIN_ID [1197646514]: " ADMIN_ID; ADMIN_ID=${ADMIN_ID:-1197646514}
-    cat > "$DATA_DIR/.env" <<ENV
-BOT_TOKEN=$BOT_TOKEN
-MISTRAL_API_KEY=$MISTRAL_API_KEY
-GROUP_CHAT_ID=$GROUP_CHAT_ID
-ADMIN_ID=$ADMIN_ID
-DB_PATH=$DATA_DIR/nyvaBot.db
-ENV
-    chmod 600 "$DATA_DIR/.env"
+    echo "!! Нет $DATA_DIR/.env. Скопируй его с компа:  scp .env root@IP_СЕРВЕРА:$DATA_DIR/.env" >&2
+    exit 1
 fi
+sed -i 's/\r$//' "$DATA_DIR/.env"                      # убираем виндовые переводы строк
+grep -q '^DB_PATH=' "$DATA_DIR/.env" || echo "DB_PATH=$DATA_DIR/nyvaBot.db" >> "$DATA_DIR/.env"
+chmod 600 "$DATA_DIR/.env"
 ln -sf "$DATA_DIR/.env" "$APP_DIR/.env"
 
 echo "==> Таблицы (создаются/мигрируются автоматически)"
