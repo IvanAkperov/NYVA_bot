@@ -33,7 +33,14 @@ def _require(name: str) -> str:
 
 # ---------- секреты ----------
 BOT_TOKEN = _require("BOT_TOKEN")
-MISTRAL_API_KEY = _require("MISTRAL_API_KEY")
+# ИИ: если задан OPENROUTER_API_KEY — работаем через OpenRouter, иначе через Mistral
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+if not (OPENROUTER_API_KEY or MISTRAL_API_KEY):
+    raise RuntimeError("Не задан ни OPENROUTER_API_KEY, ни MISTRAL_API_KEY. Добавь ключ в .env рядом с bot.py")
+AI_PROVIDER = "openrouter" if OPENROUTER_API_KEY else "mistral"
+AI_MODEL = os.getenv("AI_MODEL", "nvidia/nemotron-3.5-super-vl:free" if AI_PROVIDER == "openrouter" else "mistral-small-latest")
+AI_VISION_MODEL = os.getenv("AI_VISION_MODEL", AI_MODEL)
 
 # ---------- чат ----------
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID", "-4909725043"))
