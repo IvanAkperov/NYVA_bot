@@ -6,6 +6,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 
 import aiohttp
@@ -51,6 +52,17 @@ def clean(text: str) -> str:
     return text.replace("**", "").replace("__", "").strip()
 
 
+FALLBACK_MODELS = [m.strip() for m in os.getenv(
+    "AI_FALLBACK_MODELS", "xingchen-agi/xing4.0-29b-a4b:free,recursive/flint-v1.0:free").split(",") if m.strip()]
+
+
+async def _post(payload: dict) -> tuple[int, dict]:
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", **EXTRA_HEADERS}
+    session = await _get_session()
+    async with session.post(API_URL, json=payload, headers=headers) as resp:
+        return resp.status, await resp.json(content_type=None)
+
+
 async def chat(messages: list, *, model: str | None = None, temperature: float = 0.8,
                top_p: float = 0.95, max_tokens: int = 300, json_mode: bool = False, **extra) -> str:
     payload = {
@@ -64,34 +76,51 @@ async def chat(messages: list, *, model: str | None = None, temperature: float =
         if key in extra:
             payload[key] = extra[key]
     if AI_PROVIDER == "openrouter":
-        payload["reasoning"] = {"exclude": True}
+        # рассуждения выключаем: так быстрее и модель не съедает весь лимит на «мысли»
+        payload["reasoning"] = {"enabled": False}
+        fallbacks = [m for m in FALLBACK_MODELS if m != payload["model"]]
+        if fallbacks:
+            payload["models"] = [payload["model"], *fallbacks][:3]
     elif json_mode:
         payload["response_format"] = {"type": "json_object"}
 
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", **EXTRA_HEADERS}
-    session = await _get_session()
     last_error = None
-    for attempt in range(3):
+    for attempt in range(4):
         try:
-            async with session.post(API_URL, json=payload, headers=headers) as resp:
-                data = await resp.json(content_type=None)
-                if resp.status == 429 or resp.status >= 500:
-                    last_error = f"HTTP {resp.status}: {str(data)[:300]}"
-                    await asyncio.sleep(3 * (attempt + 1))
-                    continue
-                if resp.status != 200 or "choices" not in data:
-                    raise AIError(f"{AI_PROVIDER} {resp.status}: {str(data)[:500]}")
-                content = data["choices"][0]["message"].get("content") or ""
-                if isinstance(content, list):
-                    content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
-                content = clean(content)
-                if not content:
-                    last_error = "пустой ответ"
-                    continue
-                return content
+            status, data = await _post(payload)
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             last_error = repr(e)
             await asyncio.sleep(3 * (attempt + 1))
+            continue
+
+        if status == 429 or status >= 500:
+            last_error = f"HTTP {status}: {str(data)[:300]}"
+            await asyncio.sleep(3 * (attempt + 1))
+            continue
+        if status == 400 and "reasoning" in str(data).lower() and "reasoning" in payload:
+            # модель не умеет выключать рассуждения — разрешаем, но с запасом токенов и скрытыми «мыслями»
+            payload["reasoning"] = {"effort": "low", "exclude": True}
+            payload["max_tokens"] = max(payload["max_tokens"], 4000)
+            last_error = f"HTTP 400: {str(data)[:300]}"
+            continue
+        if status != 200 or "choices" not in data:
+            raise AIError(f"{AI_PROVIDER} {status}: {str(data)[:500]}")
+
+        choice = data["choices"][0]
+        content = choice.get("message", {}).get("content") or ""
+        if isinstance(content, list):
+            content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+        content = clean(content)
+        if content:
+            return content
+
+        # пустой ответ: модель всё равно «думала» и упёрлась в лимит — даём больше токенов
+        last_error = f"пустой ответ (finish_reason={choice.get('finish_reason')}, model={data.get('model')})"
+        log.warning(last_error)
+        payload["reasoning"] = {"effort": "low", "exclude": True} if AI_PROVIDER == "openrouter" else None
+        if payload["reasoning"] is None:
+            payload.pop("reasoning")
+        payload["max_tokens"] = max(payload["max_tokens"] * 3, 4000)
     raise AIError(f"{AI_PROVIDER} не ответил: {last_error}")
 
 
