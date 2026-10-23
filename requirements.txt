@@ -1,0 +1,6 @@
+aiogram==3.24.0
+requests>=2.31
+beautifulsoup4>=4.12
+translate>=3.6
+edge-tts>=7.0
+pillow>=10.0

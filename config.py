@@ -38,7 +38,7 @@ MISTRAL_API_KEY = _require("MISTRAL_API_KEY")
 # ---------- чат ----------
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID", "-4909725043"))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1197646514"))
-DB_PATH = str(BASE_DIR / "nyvaBot.db")
+DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "nyvaBot.db"))  # на сервере база лежит вне git
 
 # ---------- компания ----------
 FRIENDS = {

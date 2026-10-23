@@ -1,2 +1,4 @@
 .env
 errors.txt
+bot.log
+venv/
