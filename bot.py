@@ -1,31 +1,47 @@
 import asyncio
+import base64
+import logging
 import random
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command, BaseFilter
-from aiogram.types import Message, InputMediaAudio, CallbackQuery, InputFile, BufferedInputFile, ReactionTypeEmoji
+import re
+import time
+import traceback
+from datetime import date, datetime
 
-from anecdotes import get_random_anectode
-from api import get_url_meme, get_quote_of_the_day, get_horoscope_of_the_day, get_zodiac, get_tracks_by_genre, \
-    get_random_exercise, text_to_speech
-from keyboards import meme_kb, zodiac_keyboard, music_keyboard, next_and_back_kb, exercise_kb, voice_kb, \
-    delete_message_kb, username_kb
-from help_text import greeting_text
-from datetime import datetime, timedelta, time
-import sqlite3
-from mistral import send_message_from_mistral_bot
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup, default_state
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (BotCommand, BufferedInputFile, CallbackQuery, InputMediaAudio, Message, PollAnswer,
+                           ReactionTypeEmoji)
+from aiogram.utils.chat_action import ChatActionSender
 
-conn = sqlite3.connect('nyvaBot.db', check_same_thread=False)
-cursor = conn.cursor()
-router = Router()
+import ai
+import db
+import engagement
+from anecdotes import get_random_anectode
+from api import (get_horoscope_of_the_day, get_quote_of_the_day, get_random_exercise, get_tracks_by_genre,
+                 get_url_meme, get_zodiac, text_to_speech)
+from config import BOT_TOKEN, CONTEXT_MESSAGES, FRIENDS, GROUP_CHAT_ID
+from help_text import greeting_text
+from keyboards import (MODES_LIST, coupons_kb, exercise_kb, meme_kb, meme_kb_ai, mode_kb, music_keyboard,
+                       next_and_back_kb, username_kb, voice_kb, zodiac_keyboard)
+from memes import make_chat_meme
+from mistral import build_system_prompt, send_message_from_mistral_bot
 
-date = str(datetime.today()).split(" ")[0]
-bot = Bot(token='8317293211:AAEeQZX0pAT6drQ0SbSYMicQ_BLkhim6kNA')
-chat_id = -4909725043
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("bot")
+
+db.init_db()
+conn, cursor = db.conn, db.cursor
+
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-DRAW_TIME = time(15, 50)
-name = {'@nadya_teacher13': "Надя", "@xquisite_corpse": "Ваня", "@YuliyaAkperova": "Юля", "@AIAND23": "Андрей"}
+router = Router()
+BOT_USERNAME = ""
+
+RANDOM_POOL = ['normal', 'toxic', 'simp', 'drunk', 'npc', 'mystic', 'edgy_teen', 'gamer',
+               'corporate', 'conspiracy', 'zen', 'villain', 'detective', 'chaos']
+BOT_CALL_RE = re.compile(r"^\s*бот(?![а-яёa-z])[\s,.:;!?-]*", re.IGNORECASE)
 
 
 class TrainingRecord(StatesGroup):
@@ -33,38 +49,134 @@ class TrainingRecord(StatesGroup):
     weight = State()
     amount = State()
 
+
 class UserFact(StatesGroup):
     user = State()
     fact = State()
 
-music_dict = {
-    'rock': 'Рок',
-    'hip': 'Хип Хоп',
-    'rap': 'Рэп',
-    'classic': 'Классическая',
-    'metal': 'Метал',
-    'edm': 'EDM'
-}
-weekday = {
-    0: {'Понедельник': 'Ебанный понедельник, братан! Опять эта хуйня начинается...\nА я чилить буду. Быть добру! 💪'},
 
-    1: {'Вторник': 'Вторник, сука... Кто меня вообще придумал?\n@AIAND23, ты живой там? Отдыхай, брат, не ссы.'},
-
-    2: {'Среда': 'Среда, братва! Половина рабочей недели уже в жопе. Держимся, скоро пятница! 🔥'},
-
-    3: {'Четверг': 'Четверг на подходе, пацаны и девчата! Пятница уже дышит в спину. Вы всё сможете, я в вас верю!'},
-
-    4: {'Пятница': 'ПЯТНИЦА, БЛЯТЬ! Поздравляю, фитоняшки! Доделывай дела по-быстрому и вали отдыхать! 🥳'},
-
-    5: {'Суббота': 'Суббота, красавчики! Выспались наконец-то? Какие планы? Го отрываться или чилить?'},
-
-    6: {
-        'Воскресенье': 'Воскресенье, братья и сестры! День законного безделья. Валяйтесь в кроватке, жрите вкусняшки, всех обнял ❤️'}
-}
+music_dict = {'rock': 'Рок', 'hip': 'Хип Хоп', 'rap': 'Рэп', 'classic': 'Классическая', 'metal': 'Метал', 'edm': 'EDM'}
 
 
+# ===================== вспомогательное =====================
+def call_name(user) -> str:
+    """Как обращаться к человеку."""
+    if user.username and f"@{user.username}" in FRIENDS:
+        return FRIENDS[f"@{user.username}"]["name"]
+    return user.first_name or "бро"
 
 
+def describe(message: Message) -> str | None:
+    """Текстовое представление сообщения для лога/контекста."""
+    if message.text:
+        return message.text
+    caption = f" {message.caption}" if message.caption else ""
+    if message.photo:
+        return f"[фото]{caption}"
+    if message.sticker:
+        return f"[стикер {message.sticker.emoji or ''}]"
+    if message.voice:
+        return "[голосовое]"
+    if message.video_note:
+        return "[кружок]"
+    if message.animation:
+        return f"[гифка]{caption}"
+    if message.video:
+        return f"[видео]{caption}"
+    if message.audio:
+        return f"[трек]{caption}"
+    if message.poll:
+        return f"[опрос] {message.poll.question}"
+    if message.document:
+        return f"[файл]{caption}"
+    return None
+
+
+def strip_call(text: str) -> str:
+    text = BOT_CALL_RE.sub("", text, count=1)
+    if BOT_USERNAME:
+        text = re.sub(rf"@{re.escape(BOT_USERNAME)}", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def is_reply_to_bot(message: Message) -> bool:
+    r = message.reply_to_message
+    return bool(r and r.from_user and r.from_user.id == bot.id)
+
+
+def is_addressed(message: Message) -> bool:
+    text = message.text or ""
+    if text.startswith("/"):
+        return False
+    if message.chat.type == "private":
+        return True
+    if BOT_CALL_RE.match(text) or is_reply_to_bot(message):
+        return True
+    return bool(BOT_USERNAME) and f"@{BOT_USERNAME}".lower() in text.lower()
+
+
+def photo_addressed(message: Message) -> bool:
+    return bool(message.photo) and (
+        bool(message.caption and BOT_CALL_RE.match(message.caption)) or is_reply_to_bot(message)
+        or message.chat.type == "private")
+
+
+async def reply_logged(message: Message, text: str, **kwargs) -> Message:
+    sent = await message.reply(text, **kwargs)
+    db.log_bot_message(message.chat.id, sent.message_id, bot.id, text)
+    return sent
+
+
+def resolve_mode(username_full: str) -> tuple[str, str]:
+    row = db.get_user_row(username_full)
+    mode = (row[0] if row and row[0] else "normal")
+    extra_message = ""
+    if mode == "random":
+        mode = random.choice(RANDOM_POOL)
+        extra_message = f"\n\nОтправлено в режиме {mode}"
+    return mode, extra_message
+
+
+def current_voice() -> str:
+    row = cursor.execute("SELECT current_voice FROM voice").fetchone()
+    voice = row[0] if row and row[0] else "ru-RU-SvetlanaNeural"
+    return voice.replace("voice_", "")
+
+
+async def send_tts(message: Message, text: str) -> None:
+    audio = await text_to_speech(text.replace("*", ""), current_voice())
+    voice_file = BufferedInputFile(file=audio.getvalue(), filename="voice.ogg")
+    async with ChatActionSender.record_voice(bot=bot, chat_id=message.chat.id):
+        await asyncio.sleep(1 + random.uniform(0.4, 1.3))
+    await message.answer_voice(voice=voice_file)
+
+
+def log_error(where: str) -> None:
+    with open("errors.txt", "a", encoding="utf-8") as f:
+        f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] {where}\n{traceback.format_exc()}")
+
+
+# ===================== лог всей переписки =====================
+class ChatLogMiddleware(BaseMiddleware):
+    """Пишет в БД все сообщения — так бот понимает контекст, делает итоги дня и мемы про вас."""
+
+    async def __call__(self, handler, event: Message, data):
+        try:
+            text = describe(event)
+            if text and event.from_user and not event.from_user.is_bot:
+                db.log_message(event.chat.id, event.message_id, event.from_user.id,
+                               event.from_user.username or event.from_user.first_name, text)
+                if event.chat.id == GROUP_CHAT_ID:
+                    db.set_state("last_human_ts", time.time())
+        except Exception:
+            log.exception("chat log failed")
+        return await handler(event, data)
+
+
+dp.message.outer_middleware(ChatLogMiddleware())
+
+
+# ===================== базовые команды =====================
 @dp.message(Command('start'))
 async def start(message: Message):
     await message.reply('Салют! Напиши команду /help')
@@ -72,38 +184,48 @@ async def start(message: Message):
 
 @dp.message(Command('help'))
 async def help_text(message: Message):
-    await message.reply(greeting_text)
+    await message.reply(greeting_text, parse_mode="HTML")
 
 
 @dp.message(Command('meme'))
 async def send_random_meme(message: Message):
-    url = get_url_meme()
+    await send_meme(message)
+
+
+@dp.callback_query(F.data == 'more_meme')
+async def more_meme(call: CallbackQuery):
+    await call.answer("Ща нарисую…")
+    await send_meme(call.message)
+
+
+async def send_meme(message: Message):
+    async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
+        meme = await make_chat_meme(engagement.transcript(message.chat.id, 25), engagement.knowledge())
+    if meme:
+        await message.answer_photo(BufferedInputFile(meme, filename="meme.jpg"), reply_markup=meme_kb_ai())
+        return
+    url = await asyncio.to_thread(get_url_meme)
     if url:
-        await message.reply_photo(photo=url, reply_markup=meme_kb)
+        await message.answer_photo(photo=url, reply_markup=meme_kb)
     else:
-        await message.reply('Мема не нашлось :(')
+        await message.answer('Мема не нашлось :(')
 
 
-@dp.callback_query(lambda c: c.data == 'more_meme')
-async def more_meme(call):
-    url = get_url_meme()
-    if url:
-        await call.message.reply_photo(photo=url, reply_markup=meme_kb)
-    else:
-        await call.reply('Мемов не нашлось :(')
-
-
-@dp.callback_query(lambda c: c.data.startswith('zodiac_'))
-async def reply_horoscope(call):
-    data = call.data.replace('zodiac_', '')
-    await call.message.reply(f"Гороскоп на {date}\n\n{get_horoscope_of_the_day(data)}")
+@dp.callback_query(F.data.startswith('zodiac_'))
+async def reply_horoscope(call: CallbackQuery):
+    await call.answer()
+    sign = call.data.replace('zodiac_', '')
+    try:
+        text = await asyncio.to_thread(get_horoscope_of_the_day, sign)
+    except Exception:
+        text = "Звёзды сегодня молчат 🌚"
+    await call.message.reply(f"Гороскоп на {date.today():%d.%m.%Y}\n\n{text}")
 
 
 @dp.message(Command('quote_of_the_day'))
 async def send_random_quote(message: Message):
-    quote = await asyncio.to_thread(get_quote_of_the_day)
-    await bot.send_chat_action(chat_id, 'typing')
-    await asyncio.sleep(3)
+    async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+        quote = await asyncio.to_thread(get_quote_of_the_day)
     await message.reply(quote)
 
 
@@ -115,137 +237,116 @@ async def process_horoscope(message: Message):
 @dp.message(Command('get_my_horoscope'))
 async def send_user_horoscope(message: Message):
     username = f"@{message.from_user.username}"
-    await bot.send_chat_action(chat_id, 'typing')
-    await asyncio.sleep(3)
-    await message.reply(f"Гороскоп на {date}\n\n{get_horoscope_of_the_day(get_zodiac(username, cursor))}")
+    sign = get_zodiac(username, cursor)
+    if not sign:
+        await message.reply("Не знаю твой знак зодиака 🤷 Выбери вручную: /horoscope")
+        return
+    async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+        text = await asyncio.to_thread(get_horoscope_of_the_day, sign)
+    await message.reply(f"Гороскоп на {date.today():%d.%m.%Y}\n\n{text}")
 
 
+# ===================== музыка =====================
 @dp.message(Command('music'))
 async def process_music(message: Message):
     await message.reply("Выбери жанр музыки", reply_markup=music_keyboard())
 
 
 @dp.callback_query(F.data.startswith("genre_"))
-async def send_audio(call):
+async def send_audio(call: CallbackQuery):
     genre = call.data.replace("genre_", '')
-
-    cursor.execute("""
-        SELECT artist, title, file_id
-        FROM music
-        WHERE genre = ?
-        ORDER BY id
-    """, (genre,))
-    tracks = cursor.fetchall()
-
+    tracks = get_tracks_by_genre(genre, cursor)
     if not tracks:
         await call.message.answer("❌ В базе нет треков")
         await call.answer()
         return
-
-    index = 0
-    artist, title, file_id = tracks[index]
-
-    await call.message.reply_audio(
-        audio=file_id,
-        caption=f"🎧 {artist} — {title}",
-        reply_markup=next_and_back_kb(genre, index, len(tracks))
-    )
+    artist, title, file_id = tracks[0]
+    await call.message.reply_audio(audio=file_id, caption=f"🎧 {artist} — {title}",
+                                   reply_markup=next_and_back_kb(genre, 0, len(tracks)))
     await call.answer()
 
 
-@dp.callback_query(lambda c: c.data.startswith(("forward_", "back_")))
-async def navigate_tracks(call):
-    action, genre, idx = call.data.split("_")
+@dp.callback_query(F.data.startswith(("forward_", "back_")))
+async def navigate_tracks(call: CallbackQuery):
+    _, genre, idx = call.data.split("_")
     idx = int(idx)
-
     tracks = get_tracks_by_genre(genre, cursor)
-    total = len(tracks)
-
+    if not tracks:
+        await call.answer("Треков нет")
+        return
+    idx %= len(tracks)
     artist, title, file_id = tracks[idx]
-
-    await call.message.edit_media(
-        media=InputMediaAudio(media=file_id, caption=f"🎧 {artist} — {title}"),
-        reply_markup=next_and_back_kb(genre, idx, total)
-    )
+    await call.message.edit_media(media=InputMediaAudio(media=file_id, caption=f"🎧 {artist} — {title}"),
+                                  reply_markup=next_and_back_kb(genre, idx, len(tracks)))
     await call.answer()
+
+
+@dp.callback_query(F.data == "counter")
+async def counter_click(call: CallbackQuery):
+    await call.answer()
+
+
+# ===================== напоминания =====================
+def save_reminder(chat_id: int, username: str | None, text: str, when: datetime) -> None:
+    cursor.execute(
+        "INSERT INTO reminders (user_id, username, text, remind_time, notified) VALUES (?, ?, ?, ?, 0)",
+        (chat_id, username, text, when.strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+
 
 @dp.message(Command("remind"))
 async def remind_me(message: Message):
-    """
-    /remind YYYY-MM-DD HH:MM Текст напоминания
-    Напоминание приходит в тот же чат (группа или личка)
-    """
+    """/remind YYYY-MM-DD HH:MM Текст напоминания"""
     try:
-        args = message.text.split(maxsplit=2)
-        if len(args) < 3:
-            raise ValueError
-
-        date_part = args[1]                      # YYYY-MM-DD
-        time_part, *text_parts = args[2].split() # HH:MM + текст
-
-        remind_time_str = f"{date_part} {time_part}"
-        remind_text = " ".join(text_parts)
-
-        remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M")
-
-        # Сохраняем в БД
-        conn_local = sqlite3.connect('nyvaBot.db')
-        cursor_local = conn_local.cursor()
-
-        cursor_local.execute("""
-            INSERT INTO reminders (
-                user_id,  -- оставляем для совместимости
-                username,
-                text,
-                remind_time,
-                notified
-            )
-            VALUES (?, ?, ?, ?, 0)
-        """, (
-            message.chat.id,              # ← главное изменение
-            message.from_user.username,
-            remind_text,
-            remind_time.strftime("%Y-%m-%d %H:%M:%S")
-        ))
-
-        conn_local.commit()
-        conn_local.close()
-
-        await message.reply(
-            f"✅ Напоминание установлено на {remind_time_str}\n"
-            f"📌 Жди уведомления ❤️"
-        )
-
+        _, date_part, time_part, remind_text = message.text.split(maxsplit=3)
+        remind_time = datetime.strptime(f"{date_part} {time_part}", "%Y-%m-%d %H:%M")
+        save_reminder(message.chat.id, message.from_user.username, remind_text, remind_time)
+        await message.reply(f"✅ Напоминание установлено на {remind_time:%d.%m %H:%M}\n📌 Жди уведомления ❤️\n\n"
+                            f"Кстати, можно проще: «бот напомни завтра в 9 позвонить маме»")
     except Exception:
-        await message.reply(
-            "❌ Ошибка!\n"
-            "Формат:\n"
-            "/remind YYYY-MM-DD HH:MM Текст напоминания"
-        )
+        await message.reply("❌ Ошибка!\nФормат:\n/remind YYYY-MM-DD HH:MM Текст напоминания\n\n"
+                            "Или просто: «бот напомни в пятницу в 19 купить билеты»")
 
+
+async def reminder_checker(bot: Bot):
+    while True:
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            rows = conn.execute(
+                "SELECT id, user_id, username, text FROM reminders WHERE notified = 0 AND remind_time <= ?",
+                (now,)).fetchall()
+            for reminder_id, chat_id, username, text in rows:
+                who = f"@{username}, " if username else ""
+                try:
+                    await bot.send_message(chat_id=chat_id, text=f"⏰ {who}напоминаю:\n{text}")
+                except Exception as e:
+                    log.warning("reminder %s failed: %r", reminder_id, e)
+                conn.execute("UPDATE reminders SET notified = 1 WHERE id = ?", (reminder_id,))
+                conn.commit()
+        except Exception:
+            log.exception("reminder_checker")
+        await asyncio.sleep(10)
+
+
+# ===================== упражнения =====================
 @dp.message(Command('exercise'))
 async def send_gif(message: Message):
     exercise, gif = get_random_exercise()
-    cursor.execute(
-        "INSERT INTO exercise (user_id, exercise_type, timestamp) VALUES (?, ?, ?)",
-        (message.chat.id, exercise, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    )
+    cursor.execute("INSERT INTO exercise (user_id, exercise_type, timestamp) VALUES (?, ?, ?)",
+                   (message.chat.id, exercise, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
-
     if exercise != 'Планка':
-        amount = random.randint(1, 30)
-        await message.reply_animation(animation=gif, caption=f"Давай ка, сделай {exercise} {amount} раз.")
+        await message.reply_animation(animation=gif, caption=f"Давай ка, сделай {exercise} {random.randint(1, 30)} раз.")
     else:
-        await message.reply_animation(animation=gif, caption=f"Осилишь планку 5 минут?")
-
+        await message.reply_animation(animation=gif, caption="Осилишь планку 5 минут?")
     asyncio.create_task(ask_exercise_done(message.chat.id, exercise))
+
 
 async def ask_exercise_done(chat_id: int, exercise: str):
     await asyncio.sleep(300)
-
     await bot.send_message(chat_id, f"Сделал ли ты упражнение: {exercise}?", reply_markup=exercise_kb(exercise))
 
-# хэндлер для кнопок
+
 @dp.callback_query(F.data.startswith("done_"))
 async def handle_done(callback: CallbackQuery):
     answer, exercise = callback.data.split(":")
@@ -253,715 +354,456 @@ async def handle_done(callback: CallbackQuery):
         await callback.message.edit_text(f"Молодец! Упражнение {exercise} выполнено 💪")
     else:
         await callback.message.edit_text(f"Жаль 😔 Упражнение {exercise} не выполнено")
+    await callback.answer()
 
 
-def get_winner_of_the_day():
-    cursor.execute("""SELECT username, user_id FROM users;""")
-    users = cursor.fetchall()
-    winner_of_the_day = random.choice(users)
-    return winner_of_the_day[0], winner_of_the_day[1]
-
-# КУПОНЫ ДЛЯ ЖЕНЩИН
-COUPON_TYPES_GIRL = [
-    "🛁 Вечер спа: ты натираешь меня маслом, я делаю вид, что это случайно",
-    "🎁 Исполнение одного желания (даже того, о котором ты молчишь, но я догадываюсь)",
-    "🍰 Десерт, который можно есть не только ложкой, но и... ну ты поняла",
-    "🌹 Романтический ужин, после которого посуда подождет до утра",
-    "👑 День принцессы: завтрак в постель, завтрак на мне, завтрак во мне... шутка (или нет?)",
-    "💐 Букет цветов + стриптиз от партнера (цензурная версия)",
-    "🎯 Право на исполнение желания. Любого. Да, даже ЭТОГО.",
-    "🛍️ Шопинг-сопровождение + примерка дома (и снятие тоже)",
-    "🍷 Дегустация вин с последующей дегустацией друг друга",
-    "💆‍♀️ Эротический массаж от партнера (масло входит в стоимость)",
-    "✨ Вечер красоты: маски, ванна, и я рядом в чем мать родила",
-    "💑 Прогулка под луной с остановками в кустах",
-    "🎤 Караоке в душе. Вместе. Голыми.",
-    "🛋️ Вечер под пледом без одежды (плед выдержит, проверено)",
-    "🍑 Один час полного повиновения твоим желаниям (фантазия приветствуется)",
-    "🎰 Лотерея: снять одежду или выполнить желание (спойлер: снимешь в любом случае)",
-    "🌙 Ночь без taboos: включай фантазию на полную"
-]
+# ===================== купоны =====================
+def active_coupons(username: str):
+    return cursor.execute(
+        """SELECT id, coupon_type FROM daily_draw
+           WHERE used = 0 AND username = ? AND sent_date >= date('now', 'localtime', '-30 day')
+           ORDER BY sent_date""", (username,)).fetchall()
 
 
-COUPON_TYPES_MAN = [
-    "🎮 Гейминг с перерывами на поцелуи (места назначения любые)",
-    "🍺 Пиво с друзьями + пижамная вечеринка для двоих",
-    "⚽ Футбол + игра в офсайд в спальне",
-    "🍔 Бургер + я в роли соуса",
-    "🎬 Кино + продолжение в стиле 18+",
-    "💆‍♂️ Массаж + хэппи-энд (ты знаешь какой)",
-    "🎁 Сюрприз, который мы оба оценим",
-    "🏎️ Гонки + проверка твоей выносливости",
-    "🎯 Настолки с друзьями + взрослые игры ночью",
-    "🍖 Шашлыки + жаркий вечер",
-    "🎣 Рыбалка + ночная ловля (удачи мне)",
-    "🛠️ Хобби + моё хобби - удивлять тебя",
-    "🚗 Музыка в машине + моя музыка в спальне",
-    "🎫 Билет на ивент + личное выступление от меня",
-    "🥩 Ужин + десерт (я знаю, что ты любишь сладкое)",
-    "🎸 Концерт + сольный концерт для тебя",
-    "📺 Футбол с пиццей + я с начинкой",
-    "🎳 Боулинг + страйк в наших отношениях",
-    "🎮 Новая игра + новый уровень близости",
-    "🛋️ Релакс + активный отдых по желанию",
-    "🔧 Ремонт + снятие усталости народными средствами",
-    "🏋️‍♂️ Спортзал + кардио перед сном",
-    "🛁 Ванна вдвоем + мытье посуды... друг друга",
-    "💋 Полный контроль на 15 минут",
-    "🍆 День твоих желаний (список утверждается на месте)",
-    "🎰 Рулетка желаний: выпадет - сделаем",
-    "🌙 Ночь экспериментов",
-    "🔞 Одно желание без фильтров"
-]
+async def show_coupons(target: Message, user) -> None:
+    username = f"@{user.username}"
+    coupons = active_coupons(username)
+    if not coupons:
+        await target.answer(f"{call_name(user)}, купонов нет 🥲 Жди розыгрыш в 21:00")
+        return
+    lines = "\n".join(f"{i}. {c}" for i, (_, c) in enumerate(coupons, 1))
+    await target.answer(f"🎟 {call_name(user)}, твои купоны:\n\n{lines}", reply_markup=coupons_kb(coupons))
 
-import os
-from datetime import datetime
-
-# Глобальная настройка логов
-LOG_FILE = "draw_log.txt"
-
-
-def log_draw(message: str):
-    """Запись лога в файл"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"[{timestamp}] {message}\n"
-
-    try:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(log_entry)
-        print(log_entry.strip())  # Также выводим в консоль
-    except Exception as e:
-        print(f"Ошибка записи лога: {e}")
-
-
-async def send_draw_to_user(bot: Bot):
-    """Функция розыгрыша с логированием в файл"""
-
-    # Создаем файл логов если его нет
-    if not os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "w", encoding="utf-8") as f:
-            f.write("=== ЛОГ РОЗЫГРЫША ===\n")
-        log_draw("Файл логов создан")
-
-    log_draw("Функция розыгрыша запущена")
-
-    while True:
-        try:
-            # Получаем текущее время с часовым поясом
-            now = datetime.now()
-            target = now.replace(hour=21, minute=00, second=0, microsecond=0)
-
-            log_draw(f"Текущее время: {now.strftime('%H:%M:%S')}")
-            log_draw(f"Целевое время: {target.strftime('%H:%M:%S')}")
-
-            # Если уже прошло 21:00, ждем до завтра
-            if now > target:
-                target += timedelta(days=1)
-                log_draw("21:00 уже прошло, ждем до завтра")
-
-            seconds_to_wait = (target - now).total_seconds()
-            hours, remainder = divmod(seconds_to_wait, 3600)
-            minutes, seconds = divmod(remainder, 60)
-
-            log_draw(f"До розыгрыша: {int(hours)}ч {int(minutes)}м {int(seconds)}с")
-
-            await asyncio.sleep(seconds_to_wait)
-
-            # === НАЧАЛО РОЗЫГРЫША ===
-            log_draw("=== НАЧАЛО РОЗЫГРЫША ===")
-
-            try:
-                # Создаем новое соединение для этой итерации
-                conn_local = sqlite3.connect('nyvaBot.db')
-                cursor_local = conn_local.cursor()
-                log_draw("Подключение к БД установлено")
-
-                # Получаем всех пользователей
-                cursor_local.execute("SELECT username, user_id FROM users")
-                users = cursor_local.fetchall()
-
-                log_draw(f"Найдено пользователей: {len(users)}")
-
-                if not users:
-                    log_draw("ОШИБКА: Нет пользователей для розыгрыша!")
-                    conn_local.close()
-                    continue
-
-                # Выбираем случайного победителя
-                winner_username, winner_id = random.choice(users)
-                log_draw(f"Случайный выбор: {winner_username} (ID: {winner_id})")
-
-                # Проверяем дату
-                today = datetime.now().strftime('%Y-%m-%d')
-                log_draw(f"Сегодняшняя дата: {today}")
-
-                # Проверяем, был ли сегодня розыгрыш у этого пользователя
-                cursor_local.execute("""
-                    SELECT id, sent_date FROM daily_draw 
-                    WHERE user_id = ? AND sent_date = ?
-                """, (winner_id, today))
-
-                existing_draw = cursor_local.fetchone()
-
-                if existing_draw:
-                    log_draw(f"Пользователь {winner_username} уже получал розыгрыш {existing_draw[1]}. Пропускаем.")
-                    conn_local.close()
-                    continue
-
-                # Выбираем купон в зависимости от пользователя
-                if winner_username in ('@xquisite_corpse', '@AIAND23'):
-                    coupon = random.choice(COUPON_TYPES_MAN)
-                    log_draw(f"Выбран мужской купон: {coupon}")
-                else:
-                    coupon = random.choice(COUPON_TYPES_GIRL)
-                    log_draw(f"Выбран женский купон: {coupon}")
-
-                # Сохраняем в БД
-                cursor_local.execute("""
-                    INSERT INTO daily_draw (user_id, username, coupon_type, sent_date)
-                    VALUES (?, ?, ?, ?)
-                """, (winner_id, winner_username, coupon, today))
-                conn_local.commit()
-                log_draw(f"Данные сохранены в БД: {winner_username} -> {coupon[:50]}...")
-
-                # Формируем сообщение
-                text = f"""🎉 ЕЖЕДНЕВНЫЙ РОЗЫГРЫШ 🎉
-
-Победитель дня: {winner_username} 🔥
-Приз: {coupon}
-
-Действует 30 дней • {datetime.now().strftime('%d.%m.%Y')}"""
-
-                # Отправляем в группу
-                try:
-                    await bot.send_message(-4909725043, text)
-                    log_draw(f"Сообщение успешно отправлено в группу (-4909725043)")
-                    log_draw(f"ПОБЕДИТЕЛЬ: {winner_username}")
-                    log_draw(f"ПРИЗ: {coupon}")
-                except Exception as send_error:
-                    log_draw(f"ОШИБКА отправки в группу: {send_error}")
-                    # Пробуем отправить себе для диагностики
-                    try:
-                        await bot.send_message(
-                            chat_id=1197646514,  # Замени на свой ID
-                            text=f"❌ Ошибка отправки розыгрыша: {send_error}"
-                        )
-                    except:
-                        pass
-
-                conn_local.close()
-                log_draw("Соединение с БД закрыто")
-
-            except sqlite3.Error as db_error:
-                log_draw(f"ОШИБКА БАЗЫ ДАННЫХ: {db_error}")
-            except Exception as draw_error:
-                log_draw(f"ОШИБКА В РОЗЫГРЫШЕ: {draw_error}")
-                import traceback
-                error_details = traceback.format_exc()
-                log_draw(f"Трассировка:\n{error_details}")
-
-            log_draw("=== ЗАВЕРШЕНИЕ РОЗЫГРЫША ===")
-
-        except asyncio.CancelledError:
-            log_draw("Задача розыгрыша отменена")
-            raise
-        except Exception as loop_error:
-            log_draw(f"КРИТИЧЕСКАЯ ОШИБКА ЦИКЛА: {loop_error}")
-            await asyncio.sleep(60)  # Пауза при критической ошибке
-
-
-# Функция проверки напоминаний (исправленная)
-async def reminder_checker(bot: Bot):
-    while True:
-        try:
-            now = datetime.now()
-
-            # Создаем новое соединение для этой функции
-            conn_local = sqlite3.connect('nyvaBot.db')
-            cursor_local = conn_local.cursor()
-
-            cursor_local.execute("""
-                SELECT id, user_id, text, remind_time
-                FROM reminders
-                WHERE notified = 0
-            """)
-            reminders = cursor_local.fetchall()
-
-            for reminder_id, chat_id, text, remind_time_str in reminders:
-                remind_time = datetime.strptime(remind_time_str, "%Y-%m-%d %H:%M:%S")
-                if now >= remind_time:
-                    try:
-                        await bot.send_message(
-                            chat_id=chat_id,
-                            text=f"⏰ Напоминание:\n{text}"
-                        )
-
-                        cursor_local.execute(
-                            "UPDATE reminders SET notified = 1 WHERE id = ?",
-                            (reminder_id,)
-                        )
-                        conn_local.commit()
-
-                    except Exception as e:
-                        print(f"❌ Не смог отправить напоминание {chat_id}: {e}")
-
-            conn_local.close()
-            await asyncio.sleep(10)
-
-        except Exception as e:
-            print(f"❌ Ошибка в reminder_checker: {e}")
-            await asyncio.sleep(10)
 
 @dp.message(Command('get_my_coupons'))
 async def get_my_coupons(message: Message):
-    username = f"@{message.from_user.username}"
-    cursor.execute("SELECT coupon_type FROM daily_draw WHERE used = 0 AND username = ?", (username,))
-    result = cursor.fetchall()
-    if result:
-        await bot.send_chat_action(chat_id, 'typing')
-        await asyncio.sleep(3)
-        await message.reply(f"У тебя есть купон \n{result[0]}")
-    else:
-        await bot.send_chat_action(chat_id, 'typing')
-        await asyncio.sleep(3)
-        await message.reply(f"Купонов нет")
+    await show_coupons(message, message.from_user)
 
 
+@dp.callback_query(F.data == "my_coupons")
+async def my_coupons_button(call: CallbackQuery):
+    await call.answer()
+    await show_coupons(call.message, call.from_user)
+
+
+@dp.callback_query(F.data.startswith("coupon_use:"))
+async def use_coupon(call: CallbackQuery):
+    coupon_id = int(call.data.split(":")[1])
+    row = cursor.execute("SELECT username, coupon_type, used FROM daily_draw WHERE id = ?", (coupon_id,)).fetchone()
+    if not row:
+        await call.answer("Купон не найден", show_alert=True)
+        return
+    owner, coupon, used = row
+    if owner != f"@{call.from_user.username}":
+        await call.answer("Это не твой купон 😏", show_alert=True)
+        return
+    if used:
+        await call.answer("Уже использован")
+        return
+    cursor.execute("UPDATE daily_draw SET used = 1 WHERE id = ?", (coupon_id,))
+    conn.commit()
+    await call.answer("Купон активирован! 🎉")
+    partner = FRIENDS.get(owner, {}).get("partner", "")
+    text = f"🎟 {call_name(call.from_user)} активирует купон!\n\n{coupon}\n\n{partner + ', ' if partner else ''}это тебе. Отмазки не принимаются 😏"
+    await engagement.send_logged(bot, GROUP_CHAT_ID, text)
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+
+# ===================== служебное =====================
 @dp.message(Command('getid'))
 async def get_chat_id(message: Message):
-    """Получить ID чата/группы"""
-    chat_id = message.chat.id
-    chat_type = message.chat.type
-    chat_title = message.chat.title if hasattr(message.chat, 'title') else "ЛС"
-
-    info = f"""
-📊 *Информация о чате:*
-├ Тип: `{chat_type}`
-├ ID: `{chat_id}`
-└ Название: `{chat_title}`
-
-💡 *Как использовать:*
-1. В группе: `GROUP_CHAT_ID = {chat_id}`
-2. В ЛС: твой ID: `{chat_id}`
-"""
-
-    await message.reply(info, parse_mode="Markdown")
+    chat = message.chat
+    await message.reply(f"📊 Тип: {chat.type}\nID: {chat.id}\nНазвание: {chat.title or 'ЛС'}")
 
 
-async def send_morning_message(bot: Bot):
-    while True:
-        now = datetime.now()
-        target = now.replace(hour=9, minute=00, second=0, microsecond=0)
-        if now > target:
-            target += timedelta(days=1)
-        seconds_to_wait = (target - now).total_seconds()
-        await asyncio.sleep(seconds_to_wait)
-        day = weekday[datetime.now().weekday()]
+@dp.message(Command('lk'))
+async def send_message_from_lk(message: Message):
+    text = message.text.replace('/lk', '', 1).strip()
+    if text:
+        await engagement.send_logged(bot, GROUP_CHAT_ID, text)
 
-        for _, value in day.items():
-            await bot.send_message(chat_id=-4909725043,text=value, disable_notification=True)
 
-async def send_horoscope_to_everyone(bot: Bot):
-    while True:
-        now = datetime.now()
-        target = now.replace(hour=10, minute=00, second=0, microsecond=0)
-
-        if now > target:
-            target += timedelta(days=1)
-
-        seconds_to_wait = (target - now).total_seconds()
-        print(f"До следующего гороскопа: {seconds_to_wait:.0f} сек")
-
-        await asyncio.sleep(seconds_to_wait)
-        cursor.execute("SELECT * FROM users;")
-        result = cursor.fetchall()
-        for user_id, username, zodiac, mode, extra_info in result:
-            try:
-                text = f"{username}, твой гороскоп на сегодня\n\n{get_horoscope_of_the_day(zodiac)}"
-                await bot.send_message(chat_id=-4909725043, text=text)
-            except:
-                await bot.send_message(chat_id=4909725043, text='Простите, гороскоп не сработал')
 @dp.message(Command('mode'))
 async def change_mode(message: Message):
-    text = message.text.split(maxsplit=2)
-    username = f"@{message.from_user.username}"
-    answer_to_name = name[username]
-    mode = text[1]
-    if mode in (
-            'normal', 'toxic', 'simp', 'drunk', 'npc',
-            'mystic', 'edgy_teen', 'gamer',
-            'corporate', 'conspiracy',
-            'zen', 'villain',
-            'detective', 'chaos',
-            'random', 'horny'
-    ):
-        cursor.execute("UPDATE users SET mode = ? WHERE username = ?", (mode, username))
-        conn.commit()
-        await message.answer(f"{answer_to_name}, твой режим - {mode}. {'Наслаждайся!' if mode != 'random' else 'Тебе пиздец'}")
-    else:
-        await message.answer(f"{answer_to_name}, такого режима у меня нет.")
-
-@router.message(Command('fact'))
-async def create_fact(message: Message, state: FSMContext):
-    await state.set_state(UserFact.user)
-    await message.reply("Запишем новый факт. О ком записываем инфу?", reply_markup=username_kb())
-
-@router.callback_query(lambda c: c.data.startswith('user_'), UserFact.user)
-async def process_user(call: CallbackQuery, state: FSMContext):
-    data = call.data.replace("user_", '')
-    await state.update_data(user=data)
-    await state.set_state(UserFact.fact)
-    await call.message.answer(f"Выбран пользователь: {data}")
-    await call.message.answer("Какой факт запишем?")
-    await call.answer()
-    await call.message.delete()
-
-
-@router.message(UserFact.fact)
-async def process_fact(message: Message, state: FSMContext) -> None:
-    await state.update_data(fact=message.text)
-    data = await state.get_data()
-    user = data['user']
-    fact = data['fact'] + '.'
-    await state.clear()
-    cursor.execute('''
-        UPDATE users 
-        SET extra_info = CASE 
-            WHEN extra_info IS NULL OR extra_info = '' THEN ?
-            ELSE extra_info || '\n' || ?
-        END
-        WHERE username = ?
-    ''', (fact, fact, user))
-    conn.commit()
-    await message.answer(f"Добавил факт - {user} {fact}")
-
-
-
-@router.message(Command('record'))
-async def create_record(message: Message, state: FSMContext):
-    await state.set_state(TrainingRecord.exercise)
-    await message.reply('Новый рекорд? Отлично! Напиши упражнение')
-
-
-@router.message(Command("cancel", "отмена", "стоп"), ~F.state == default_state)
-async def cancel_handler(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("Нет активного состояния для отмены")
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply("Выбери, каким мне быть с тобой:", reply_markup=mode_kb())
         return
+    await apply_mode(message, message.from_user, parts[1].strip().lower())
 
-    await state.finish()  # Сброс состояния
-    await message.answer("Похуй, потом запишем тогда")
-@router.message(TrainingRecord.exercise)
-async def process_exercise(message: Message, state: FSMContext) -> None:
-    await state.update_data(exercise=message.text)
-    await state.set_state(TrainingRecord.weight)
-    await message.answer("Какой был вес в кг?:")
-@router.message(TrainingRecord.weight)
-async def process_weight(message: Message, state: FSMContext) -> None:
-    await state.update_data(weight=message.text)
-    await state.set_state(TrainingRecord.amount)
-    await message.answer("Сколько повторений?")
-@router.message(TrainingRecord.amount)
-async def process_amount(message: Message, state: FSMContext) -> None:
-    await state.update_data(amount=message.text)
-    data = await state.get_data()
-    exercise = data['exercise']
-    weight = data['weight']
-    amount = data['amount']
-    await state.clear()
-    username = f"@{message.from_user.username}"
-    cursor.execute("""INSERT INTO records (username, exercise, weight, amount) VALUES (?, ?, ?, ?)""", (username, exercise, weight, amount))
+
+@dp.callback_query(F.data.startswith("setmode_"))
+async def mode_button(call: CallbackQuery):
+    await call.answer()
+    await apply_mode(call.message, call.from_user, call.data.replace("setmode_", ""))
+
+
+async def apply_mode(target: Message, user, mode: str):
+    if mode not in MODES_LIST:
+        await target.answer(f"{call_name(user)}, такого режима у меня нет. Жми /mode")
+        return
+    username = f"@{user.username}"
+    if not cursor.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+        cursor.execute("INSERT INTO users (username, mode) VALUES (?, ?)", (username, mode))
+    else:
+        cursor.execute("UPDATE users SET mode = ? WHERE username = ?", (mode, username))
     conn.commit()
-    await message.answer(f"Добавил в базу твой рекорд - {exercise} {weight}x{amount}")
-
-
-@dp.message(Command('get_my_records'))
-async def get_my_records(message: Message):
-    username = f"@{message.from_user.username}"
-    cursor.execute("""SELECT exercise, weight, amount FROM records WHERE username = ?""", (username,))
-    result = cursor.fetchall()
-    text = "Твои рекорды:\n\n"
-    for exercise, weight, amount in result:
-        text += f"• {exercise}: {weight} кг × {amount}\n"
-    await message.reply(text)
+    await target.answer(f"{call_name(user)}, твой режим — {mode}. {'Наслаждайся!' if mode != 'random' else 'Тебе пиздец'}")
 
 
 @dp.message(Command('voice'))
 async def select_voice(message: Message):
     await message.answer("Выберите озвучку", reply_markup=voice_kb())
 
-@dp.callback_query(lambda c: c.data.startswith('voice_'))
+
+@dp.callback_query(F.data.startswith('voice_'))
 async def change_voice(call: CallbackQuery):
     voice = call.data.replace("voice_", '')
-    cursor.execute("""UPDATE voice set current_voice = ? WHERE id = ?""", (voice, 1))
+    cursor.execute("UPDATE voice SET current_voice = ? WHERE id = ?", (voice, 1))
     conn.commit()
     await call.message.answer(f"Выбрана озвучка {voice}")
     await call.answer()
     await call.message.delete()
 
-@dp.callback_query(lambda d: d.data == 'delete')
+
+@dp.callback_query(F.data == 'delete')
 async def delete_bot_message(call: CallbackQuery):
     await call.message.edit_text('Сообщение удалено.')
+    await call.answer()
 
 
-@router.message(
-    lambda message: (
-        (message.text and message.text.lower().startswith("бот")) or
-        (message.reply_to_message and message.reply_to_message.from_user.id == bot.id)
-    )
-)
-async def handle_interactive(message: Message):
+# ===================== новое: игры, итоги, тишина =====================
+@dp.message(Command("top"))
+async def top(message: Message):
+    week = engagement.leaderboard_text()
+    total = db.leaderboard()
+    all_time = "\n".join(f"{engagement.friend_name(u)} — {p}" for u, _, p in total)
+    text = (week or "На этой неделе очков пока нет — квиз дня в 12:30 🧠")
+    if all_time:
+        text += f"\n\n📜 За всё время:\n{all_time}"
+    await message.reply(text)
+
+
+@dp.message(Command("quiz"))
+async def quiz_now(message: Message):
     try:
-        text = message.text or message.caption
-        if not text:
-            return
-        if text.lower().startswith(('бот', 'Бот')):
-            text = text[3:].lstrip() if text[0].isupper() else text[1:].lstrip()
+        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+            await engagement.send_daily_quiz(bot)
+    except Exception:
+        log_error("quiz")
+        await message.reply("Ведущий квиза подавился вопросом, попробуй ещё раз")
 
 
-        username = message.from_user.username or "аноним"
-        username_full = f"@{username}"
-        cursor.execute(
-            "INSERT INTO messages (username, role, content) VALUES (?, ?, ?)",
-            (username, "user", text)
-        )
-        conn.commit()
-        cursor.execute("""
-            INSERT INTO chatting (
-                message_id,
-                user_id,
-                username,
-                message
-            )
-            VALUES (?, ?, ?, ?)
-        """, (
-            message.message_id,
-            message.from_user.id,
-            message.from_user.username or "unknown",
-            message.text
-        ))
-        conn.commit()
-
-        # Получаем режим из базы
-        cursor.execute("""SELECT mode, extra_info FROM users WHERE username = ?;""", (username_full,))
-
-        row = cursor.fetchone()
-        mode = row[0] if row else "normal"
-        extra_info = row[1] if row else ''
-        extra_message = ''
-        if mode == 'random':
-            mode = random.choice(['normal', 'toxic', 'simp', 'drunk', 'npc',
-            'mystic', 'edgy_teen', 'gamer',
-            'corporate', 'conspiracy',
-            'zen', 'villain',
-            'detective', 'chaos'])
-            extra_message = f'Отправлено в режиме {mode}'
-        if mode == 'toxic':
-            CLOWN_CHANCE = 0.8
-            should_send_clown = (
-                    message.from_user.id == message.from_user.id and
-                    random.random() < CLOWN_CHANCE
-            )
-
-            if should_send_clown:
-                try:
-                    await bot.set_message_reaction(
-                        chat_id=message.chat.id,
-                        message_id=message.message_id,
-                        reaction=[ReactionTypeEmoji(emoji="🤡")],
-                        is_big=True
-                    )
-                    await asyncio.sleep(0.5)
-                except Exception as e:
-                    print(f"Ошибка реакции клоуна: {e}")
-        cursor.execute("""SELECT current_voice FROM voice""")
-        row2 = cursor.fetchone()
-        voice = row2[0] if row2 else 'voice_ru-RU-SvetlanaNeural'
-        cursor.execute(
-            """
-            SELECT role, content
-            FROM messages
-            WHERE username = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (username,)
-        )
-        rows = cursor.fetchall()
-        history = list(reversed(rows))
-
-        response_text = await send_message_from_mistral_bot(
-            text=text,
-            username=username,
-            mode=mode,
-            history=history,
-            extra_info=extra_info
-        )
-        if 'аудио' in text.lower():
-            response_text = response_text.replace("*", '')
-            audio = await text_to_speech(response_text, voice)
-            voice_bytes = audio.getvalue()  # bytes
-            voice_file = BufferedInputFile(
-                file=voice_bytes,
-                filename="voice.ogg"
-            )
-            await bot.send_chat_action(message.chat.id, 'record_voice')
-            await asyncio.sleep(2 + random.uniform(0.4, 1.3))
-            await message.answer_voice(voice=voice_file)
-        elif 'анекдот' in text.lower():
-            joke = get_random_anectode()
-            audio = await text_to_speech(joke, voice)
-            voice_bytes = audio.getvalue()  # bytes
-            voice_file = BufferedInputFile(
-                file=voice_bytes,
-                filename="voice.ogg"
-            )
-            await bot.send_chat_action(message.chat.id, 'record_voice')
-            await asyncio.sleep(2 + random.uniform(0.4, 1.3))
-            await message.answer_voice(voice=voice_file)
-        else:
-            await bot.send_chat_action(message.chat.id, 'typing')
-            await asyncio.sleep(1 + random.uniform(0.4, 1.3))
-
-            await message.reply(f"{response_text}\n\n{extra_message}", reply_markup=delete_message_kb())
-
-    except Exception as e:
-        await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")
-        with open("errors.txt", 'w', encoding='utf-8') as f:
-            f.write(str(e))
-
-
-
-    except Exception as e:
-        print(f"Mistral error in handler: {e}")
-        await message.reply("⚠️ Бро, я сломался 😵")
-
-
-
-
-
-
-@router.message(lambda m: m.photo and m.caption and "бот оцени" in m.caption.lower())
-async def handle_photo_analysis(message: Message):
+@dp.message(Command("who"))
+async def who_now(message: Message):
     try:
-        photo = message.photo[-1]  # самое большое
-        file = await message.bot.get_file(photo.file_id)
-        file_bytes = await message.bot.download_file(file.file_path)
-        image_bytes = file_bytes.read()
-
-        analysis = await analyze_image_simple(image_bytes)
-        await message.answer("Ща, погоди")
-        await asyncio.sleep(2)
-        await message.reply(analysis)
-    except:
-        await message.reply("У меня глаза болят, попробуй позже")
-
-async def analyze_image_simple(image_bytes: bytes) -> str:
-    reactions = [
-        "Неожиданно… но выглядит кайфово 🔥",
-        "Окей, вот это уже достойно внимания",
-        "Я не ожидал, но мне зашло",
-        "Есть вайб, не буду врать",
-        "Ну слушай… красиво, чё",
-        "Выглядит аккуратно, респект",
-        "Это явно делалось не на отъебись",
-        "Сюда бы ещё свет нормальный — и вообще топ",
-        "Есть стиль, есть идея",
-        "Ну вот это уже не кринж, одобряем 👍",
-        "Чётко. Без лишнего мусора",
-        "Глаз не режет — уже успех",
-        "Мне нравится, хоть я и вредный",
-        "Окей, плюс в карму",
-        "Редкий случай, когда фотка реально норм",
-        "Ну… фотка как фотка",
-        "Я посмотрел. Осмысливаю 🤔",
-        "Ничего сверхъестественного, но и не жесть",
-        "Окей, принято",
-        "Сложно что-то сказать, если честно",
-        "Без эмоций. Просто есть",
-        "Я видел такое уже раз сто",
-        "Средненько. Ни туда ни сюда",
-        "Не зацепило, но и не выбесило",
-        "Фон живёт своей жизнью, объект — своей",
-        "Вроде нормально, но чего-то не хватает",
-        "Не плохо. Не хорошо. Просто… да",
-        "Если это идея — она пока прячется",
-        "Смотрю и молчу",
-        "Ну, бывает",
-        "Чё-то я не понял, но выглядит стрёмно 😐",
-        "Ну это уже уровень кринжа, конечно",
-        "Если это шутка — то слабовато",
-        "Я видел вещи и похуже, но это близко",
-        "Зачем ты это вообще сфоткал?",
-        "Глазам больно, если честно",
-        "Тут явно нужен контекст… и психолог",
-        "Это должно было остаться в галерее",
-        "Я бы такое не показывал",
-        "Сомнительное решение, очень",
-        "Кажется, камера тут вообще ни при чём",
-        "Это выглядит как ошибка, а не задумка",
-        "Мне неловко, и я даже не знаю почему",
-        "Фото есть — смысла нет",
-        "Ну вот зачем",
-    ]
-    reaction = random.choice(reactions)
-    return f"Так, скачал. Размер файла {len(image_bytes)} KB. {reaction}"
+        await engagement.send_who_poll(bot)
+    except Exception:
+        log_error("who")
+        await message.reply("Не придумал вопрос, попробуй ещё раз")
 
 
-@dp.message(Command('lk'))
-async def send_message_from_lk(message: Message):
-    text = message.text
-    text = text.replace('/lk', '')
-    await bot.send_message(-4909725043, text)
+@dp.message(Command("recap"))
+async def recap_now(message: Message):
+    await engagement.send_daily_recap(bot)
+
+
+@dp.message(Command("mute"))
+async def mute_cmd(message: Message):
+    engagement.mute(3)
+    await message.reply("Ок, 3 часа сам не влезаю в разговор 🤐 На «бот …» всё равно отвечу. /unmute — вернуть")
+
+
+@dp.message(Command("unmute"))
+async def unmute_cmd(message: Message):
+    engagement.unmute()
+    await message.reply("Я вернулся 😈")
 
 
 @dp.message(Command("summary"))
 async def summary(message: Message):
-    cursor.execute("""
-        SELECT username, message
-        FROM chatting
-        WHERE date(sent_at) = date('now', 'localtime')
-        ORDER BY sent_at
-    """)
+    rows = db.messages_for_day(message.chat.id, date.today().isoformat())
+    history = "\n".join(f"{engagement.friend_name(u)}: {m}" for u, m, _ in rows if u != db.BOT_NAME_IN_LOG)
+    if not history:
+        await message.reply("Сегодня тут было тихо, пересказывать нечего 🦗")
+        return
+    async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+        answer = await ai.chat([
+            {"role": "system", "content": "Сделай краткую сводку переписки друзей за день: основные темы, важные события, "
+                                          "смешные моменты, планы и договорённости. Коротко, по-дружески, без markdown."},
+            {"role": "user", "content": history[-12000:]},
+        ], max_tokens=700, temperature=0.6)
+    await reply_logged(message, ai.clean(answer))
 
-    rows = cursor.fetchall()
 
-    history = "\n".join(
-        f"{username}: {msg}"
-        for username, msg in rows
-    )
+@router.poll_answer()
+async def on_poll_answer(poll_answer: PollAnswer):
+    try:
+        await engagement.handle_poll_answer(poll_answer, bot)
+    except Exception:
+        log.exception("poll answer")
 
-    answer = await send_message_from_mistral_bot(
-        text=f"""
-Сделай краткую сводку переписки друзей за день.
 
-Нужно:
-- основные темы
-- важные события
-- смешные моменты
-- планы и договоренности
+# ===================== FSM: факты и рекорды =====================
+@router.message(Command("cancel", "отмена", "стоп"), StateFilter("*"))
+async def cancel_handler(message: Message, state: FSMContext):
+    if await state.get_state() is None:
+        await message.answer("Нет активного состояния для отмены")
+        return
+    await state.clear()
+    await message.answer("Похуй, потом запишем тогда")
 
-Переписка:
 
-{history}
-""",
-        username="summary",
-        mode="normal",
-        history=[],
-        extra_info=""
-    )
+@router.message(Command('fact'))
+async def create_fact(message: Message, state: FSMContext):
+    await state.set_state(UserFact.user)
+    await message.reply("Запишем новый факт. О ком записываем инфу?", reply_markup=username_kb())
 
-    await message.answer(answer)
+
+@router.callback_query(F.data.startswith('user_'), UserFact.user)
+async def process_user(call: CallbackQuery, state: FSMContext):
+    data = call.data.replace("user_", '')
+    await state.update_data(user=data)
+    await state.set_state(UserFact.fact)
+    await call.message.answer(f"Выбран пользователь: {engagement.friend_name(data)}\nКакой факт запишем?")
+    await call.answer()
+    await call.message.delete()
+
+
+@router.message(UserFact.fact)
+async def process_fact(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.clear()
+    db.add_fact(data['user'], message.text or "")
+    await message.answer(f"Добавил факт — {engagement.friend_name(data['user'])}: {message.text}")
+
+
+@router.message(Command('record'))
+async def create_record(message: Message, state: FSMContext):
+    await state.set_state(TrainingRecord.exercise)
+    await message.reply('Новый рекорд? Отлично! Напиши упражнение (или /cancel)')
+
+
+@router.message(TrainingRecord.exercise)
+async def process_exercise(message: Message, state: FSMContext) -> None:
+    await state.update_data(exercise=message.text)
+    await state.set_state(TrainingRecord.weight)
+    await message.answer("Какой был вес в кг?")
+
+
+@router.message(TrainingRecord.weight)
+async def process_weight(message: Message, state: FSMContext) -> None:
+    await state.update_data(weight=message.text)
+    await state.set_state(TrainingRecord.amount)
+    await message.answer("Сколько повторений?")
+
+
+@router.message(TrainingRecord.amount)
+async def process_amount(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.clear()
+    username = f"@{message.from_user.username}"
+    cursor.execute("INSERT INTO records (username, exercise, weight, amount) VALUES (?, ?, ?, ?)",
+                   (username, data['exercise'], data['weight'], message.text))
+    conn.commit()
+    await message.answer(f"Добавил в базу твой рекорд — {data['exercise']} {data['weight']}x{message.text} 💪")
+    if message.chat.id != GROUP_CHAT_ID:
+        await engagement.send_logged(
+            bot, GROUP_CHAT_ID, f"🏋️ {call_name(message.from_user)} поставил(а) рекорд: {data['exercise']} {data['weight']}×{message.text}")
+
+
+@dp.message(Command('get_my_records'))
+async def get_my_records(message: Message):
+    username = f"@{message.from_user.username}"
+    rows = cursor.execute("SELECT exercise, weight, amount FROM records WHERE username = ?", (username,)).fetchall()
+    if not rows:
+        await message.reply("Рекордов пока нет. Записать: /record")
+        return
+    await message.reply("Твои рекорды:\n\n" + "\n".join(f"• {e}: {w} кг × {a}" for e, w, a in rows))
+
+
+# ===================== фото: реальный разбор нейросетью =====================
+FALLBACK_PHOTO_REACTIONS = [
+    "Неожиданно… но выглядит кайфово 🔥", "Есть вайб, не буду врать", "Ну слушай… красиво, чё",
+    "Я посмотрел. Осмысливаю 🤔", "Средненько. Ни туда ни сюда", "Это должно было остаться в галерее",
+    "Чё-то я не понял, но выглядит стрёмно 😐", "Ну вот зачем",
+]
+
+
+@router.message(F.photo, F.func(photo_addressed))
+async def handle_photo_analysis(message: Message):
+    username = message.from_user.username or ""
+    question = strip_call(message.caption or "") or "оцени фото"
+    try:
+        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+            file = await bot.get_file(message.photo[-1].file_id)
+            data = await bot.download_file(file.file_path)
+            b64 = base64.b64encode(data.read()).decode()
+            mode, extra = resolve_mode(f"@{username}")
+            system = build_system_prompt(username, mode, db.get_all_facts(),
+                                         engagement.transcript(message.chat.id, 10, message.message_id))
+            system += ("\n\nК сообщению приложено фото — внимательно посмотри на него и ответь именно про то, что на нём. "
+                       "Если просят оценить — дай честную смешную оценку и поставь балл X/10. 2–4 предложения.")
+            answer = await ai.vision(system, question, b64)
+        await reply_logged(message, ai.clean(answer) + extra)
+    except Exception:
+        log_error("photo")
+        await message.reply(random.choice(FALLBACK_PHOTO_REACTIONS))
+
+
+# ===================== разговор с ботом =====================
+MUTE_RE = re.compile(r"^(заткнись|помолчи|молчи|отстань|не влезай|тихо)", re.IGNORECASE)
+
+
+def fact_subject(fact: str, author_username: str) -> str:
+    words = re.findall(r"[а-яёa-z]+", fact.lower())
+    for word in words:
+        for username, info in FRIENDS.items():
+            if word in info["forms"]:
+                return username
+    return author_username
+
+
+async def parse_reminder(text: str) -> tuple[datetime, str] | None:
+    now = datetime.now()
+    data = await ai.chat_json([
+        {"role": "system", "content": (
+            f"Сейчас {now:%Y-%m-%d %H:%M}, {engagement.WEEKDAYS[now.weekday()]}. Извлеки из просьбы напоминание. "
+            "Если время не указано: утром=09:00, днём=13:00, вечером=19:00, иначе 10:00. "
+            'Верни JSON {"datetime": "YYYY-MM-DD HH:MM", "text": "что напомнить, коротко"}; '
+            'если понять нельзя — {"datetime": null}')},
+        {"role": "user", "content": text},
+    ], temperature=0, max_tokens=120)
+    if not data.get("datetime"):
+        return None
+    when = datetime.strptime(data["datetime"], "%Y-%m-%d %H:%M")
+    return (when, data.get("text") or text) if when > now else None
+
+
+@router.message(F.text, F.func(is_addressed))
+async def handle_interactive(message: Message):
+    try:
+        text = strip_call(message.text)
+        user = message.from_user
+        username = user.username or ""
+        username_full = f"@{username}"
+        low = text.lower()
+
+        if not text:
+            await reply_logged(message, random.choice(["чё?", "ну?", "я тут", "слушаю 👀"]))
+            return
+
+        if MUTE_RE.match(low):
+            engagement.mute(3)
+            await message.reply("Ладно-ладно, 3 часа сам не влезаю 🤐 (/unmute — вернуть)")
+            return
+
+        if low.startswith("запомни"):
+            fact = re.sub(r"^запомни[\s,:]*(что\s+)?", "", text, flags=re.IGNORECASE).strip()
+            if not fact:
+                await message.reply("Что запомнить-то?")
+                return
+            subject = fact_subject(fact, username_full)
+            db.add_fact(subject, fact)
+            await message.reply(f"🧠 Запомнил ({engagement.friend_name(subject)}): {fact}")
+            return
+
+        if low.startswith("напомни"):
+            parsed = await parse_reminder(text)
+            if not parsed:
+                await message.reply("Не понял, когда напомнить 🤔 Скажи, например: «бот напомни завтра в 9 позвонить маме»")
+                return
+            when, what = parsed
+            save_reminder(message.chat.id, username or None, what, when)
+            await message.reply(f"✅ Напомню {when:%d.%m в %H:%M}: {what}")
+            return
+
+        mode, extra_message = resolve_mode(username_full)
+        if mode == 'toxic' and random.random() < 0.8:
+            try:
+                await bot.set_message_reaction(chat_id=message.chat.id, message_id=message.message_id,
+                                               reaction=[ReactionTypeEmoji(emoji="🤡")], is_big=True)
+            except Exception as e:
+                log.warning("clown reaction: %r", e)
+
+        if 'анекдот' in low:
+            await send_tts(message, get_random_anectode())
+            return
+
+        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+            response_text = await send_message_from_mistral_bot(
+                text=text,
+                username=username,
+                mode=mode,
+                extra_info=db.get_all_facts(),
+                chat_context=engagement.transcript(message.chat.id, CONTEXT_MESSAGES, message.message_id),
+            )
+
+        if 'аудио' in low or 'голосом' in low or 'голосовое' in low:
+            db.log_bot_message(message.chat.id, 0, bot.id, response_text)
+            await send_tts(message, response_text)
+        else:
+            await reply_logged(message, f"{response_text}{extra_message}")
+
+    except Exception:
+        log_error("interactive")
+        await message.reply("Соединение прервано, попробуй еще раз, либо пиздуй баги исправлять")
+
+
+# ===================== всё остальное в группе: бот «слушает» =====================
+@router.message(F.chat.id == GROUP_CHAT_ID)
+async def group_listener(message: Message):
+    if message.text and message.text.startswith("/"):
+        return
+    try:
+        await engagement.maybe_engage(message, bot)
+    except Exception:
+        log.exception("maybe_engage")
+
 
 dp.include_router(router)
+
+
+async def set_commands():
+    await bot.set_my_commands([
+        BotCommand(command="help", description="что я умею"),
+        BotCommand(command="top", description="таблица квиз-лиги"),
+        BotCommand(command="quiz", description="внеочередной квиз"),
+        BotCommand(command="who", description="опрос «Кто из нас…»"),
+        BotCommand(command="meme", description="мем про нашу переписку"),
+        BotCommand(command="summary", description="пересказ чата за сегодня"),
+        BotCommand(command="get_my_coupons", description="мои купоны"),
+        BotCommand(command="mode", description="мой характер"),
+        BotCommand(command="get_my_horoscope", description="мой гороскоп"),
+        BotCommand(command="exercise", description="упражнение на честность"),
+        BotCommand(command="record", description="записать рекорд"),
+        BotCommand(command="music", description="музыка"),
+        BotCommand(command="mute", description="не влезать в разговор 3 часа"),
+        BotCommand(command="unmute", description="снова болтать"),
+    ])
+
+
 async def main():
-    await asyncio.gather(
-        dp.start_polling(bot),
-        reminder_checker(bot),
-        send_draw_to_user(bot),
-        send_horoscope_to_everyone(bot),
-    )
+    global BOT_USERNAME
+    me = await bot.me()
+    BOT_USERNAME = me.username or ""
+    if not db.get_state("last_human_ts"):
+        db.set_state("last_human_ts", time.time())
+    try:
+        await set_commands()
+    except Exception:
+        log.exception("set_commands")
+
+    background = [asyncio.create_task(reminder_checker(bot)), asyncio.create_task(engagement.scheduler(bot))]
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        for task in background:
+            task.cancel()
+        await ai.close()
 
 
 if __name__ == '__main__':

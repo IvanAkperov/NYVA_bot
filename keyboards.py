@@ -1,6 +1,3 @@
-from datetime import datetime
-from gc import callbacks
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -83,3 +80,35 @@ def username_kb():
                                                   InlineKeyboardButton(text='Ваня', callback_data='user_@xquisite_corpse')],
                                                   [InlineKeyboardButton(text='Юля', callback_data='user_@YuliyaAkperova'),
                                                   InlineKeyboardButton(text='Андрей', callback_data='user_@AIAND23')]])
+
+
+MODES_LIST = ['normal', 'toxic', 'simp', 'drunk', 'npc', 'mystic', 'edgy_teen', 'gamer',
+              'corporate', 'conspiracy', 'zen', 'villain', 'detective', 'chaos', 'random']
+
+
+def mode_kb():
+    rows, row = [], []
+    for m in MODES_LIST:
+        row.append(InlineKeyboardButton(text=m, callback_data=f"setmode_{m}"))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def coupons_kb(coupons):
+    """coupons: список (id, coupon_type)"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"✅ Использовать №{i}", callback_data=f"coupon_use:{cid}")]
+        for i, (cid, _) in enumerate(coupons, 1)
+    ])
+
+
+def after_draw_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎟 Мои купоны", callback_data="my_coupons")]])
+
+
+def meme_kb_ai():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Ещё мем про нас', callback_data='more_meme')]])

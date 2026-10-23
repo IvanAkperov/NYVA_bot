@@ -1,17 +1,17 @@
-# import sqlite3
+import sqlite3
 #
-# conn = sqlite3.connect('nyvaBot.db')
-# cursor = conn.cursor()
-# cursor.execute("""
-# CREATE TABLE IF NOT EXISTS reminders (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     user_id INTEGER NOT NULL,        -- добавили user_id для отправки сообщений
-#     username TEXT,                   -- для логов, необязательно
-#     text TEXT NOT NULL,
-#     remind_time TEXT NOT NULL,       -- ISO формат: "2026-01-17 18:30:00"
-#     notified INTEGER DEFAULT 0       -- 0 = не отправлено, 1 = отправлено
-# );
-# """)
+conn = sqlite3.connect('nyvaBot.db')
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chatting (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    message TEXT NOT NULL,
+    sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+""")
 # cursor.execute("""DROP TABLE IF EXISTS daily_draw""")
 # cursor.execute("""CREATE TABLE IF NOT EXISTS daily_draw (
 #     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,11 +1,6 @@
 import random
 
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
-import asyncio
-
-
-client = MistralClient(api_key="UswoYLLugmk7RwzSsz8AT8X6H3xx0U43")
+import ai
 WORLD_CONTEXT = """
 В этом мире есть следующие люди:
 
@@ -335,34 +330,24 @@ MODES = {
 }
 
 
-def _mistral_sync_call(text: str, username, mode: str, history, extra_info) -> str:
+def build_system_prompt(username: str, mode: str, extra_info: str = "", chat_context: str = "") -> str:
+    """Собирает системный промпт: мир + факты + свежая переписка + режим + персона собеседника."""
     mode_config = MODES.get(mode, MODES["normal"])
     persona = PERSONAS.get(username, "")
 
-    # 1. Подготовка дополнительных фактов
-    facts_text = ""
+    world = WORLD_CONTEXT.strip()
     if extra_info:
-        # Если extra_info это список кортежей (role, content)
-        if isinstance(extra_info, list):
-            facts_list = []
-            for role, content in extra_info:
-                if role == "assistant":  # Факты, которые бот добавил ранее
-                    facts_list.append(content)
-            if facts_list:
-                facts_text = "\n".join(facts_list)
-        # Если extra_info это строка (прямой факт)
-        elif isinstance(extra_info, str):
-            facts_text = extra_info
+        world += f"\n\n--- ДОПОЛНИТЕЛЬНЫЕ ФАКТЫ (записали сами друзья) ---\n{extra_info}\n--- КОНЕЦ ФАКТОВ ---"
+    if chat_context:
+        world += (
+            "\n\n--- ПОСЛЕДНИЕ СООБЩЕНИЯ В ЧАТЕ (это контекст разговора; не пересказывай его, "
+            "просто будь в теме и можешь сослаться, если уместно) ---\n"
+            f"{chat_context}\n--- КОНЕЦ ПЕРЕПИСКИ ---"
+        )
 
-    # 2. Обновляем WORLD_CONTEXT с дополнительными фактами
-    world_context_with_facts = WORLD_CONTEXT.strip()
     current_mood = random.choice(MOODS)
-
-    if facts_text:
-        world_context_with_facts += f"\n\n--- ДОПОЛНИТЕЛЬНЫЕ ФАКТЫ ---\n{facts_text}\n--- КОНЕЦ ДОПОЛНИТЕЛЬНЫХ ФАКТОВ ---\n"
-
-    system_prompt = f"""
-{world_context_with_facts}
+    return f"""
+{world}
 Твоё текущее настроение сейчас: {current_mood}. Пусть это слегка влияет на тон ответа, не выпячивай это явно и не упоминай слово "настроение" в тексте.
 
 Сейчас активный режим: {mode.upper()}
@@ -371,40 +356,26 @@ def _mistral_sync_call(text: str, username, mode: str, history, extra_info) -> s
 
 {persona.strip()}
 
-ВАЖНО: Учитывай все факты из раздела "ДОПОЛНИТЕЛЬНЫЕ ФАКТЫ" как часть твоих знаний о персонажах.
+ВАЖНО: Учитывай все факты как часть твоих знаний о персонажах, но не вываливай их без повода.
 Отвечай ТОЛЬКО от лица бота в этом режиме. Если человек просит мотивацию, отдавайся на 100% в поддержке. Никаких пояснений, никаких "я в режиме drunk".
-Если факт или шутка уже были использованы ранее в диалоге — не повторяй их снова без причины.
+Если факт или шутка уже были использованы ранее в переписке — не повторяй их снова без причины.
+Не используй markdown (звёздочки, решётки) — это обычный чат в телеге.
 """.strip()
 
-    messages = [
-        ChatMessage(role="system", content=system_prompt)
-    ]
 
-    # 3. Добавляем историю без дублирования фактов
-    for role, content in history:
-        # Пропускаем сообщения, которые уже есть в фактах
-        if role == "assistant" and content in facts_text:
-            continue
-        messages.append(
-            ChatMessage(role=role, content=content)
-        )
+async def send_message_from_mistral_bot(text, username, mode, history=None, extra_info="", chat_context=""):
+    mode_config = MODES.get(mode, MODES["normal"])
+    messages = [{"role": "system", "content": build_system_prompt(username, mode, extra_info, chat_context)}]
+    for role, content in history or []:
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": text})
 
-    # 4. Не добавляем extra_info в историю, т.к. они уже в system_prompt
-    # Вместо этого добавляем только текущий запрос пользователя
-    messages.append(
-        ChatMessage(role="user", content=text)
-    )
-
-    response = client.chat(
-        model="mistral-small-latest",
-        messages=messages,
+    extra = {k: mode_config[k] for k in ("frequency_penalty", "presence_penalty") if k in mode_config}
+    answer = await ai.chat(
+        messages,
         temperature=mode_config["temperature"],
         top_p=mode_config.get("top_p", 0.95),
         max_tokens=mode_config["max_tokens"],
+        **extra,
     )
-
-    return response.choices[0].message.content.strip()
-
-
-async def send_message_from_mistral_bot(text, username, mode, history, extra_info):
-    return await asyncio.to_thread(_mistral_sync_call, text, username, mode, history, extra_info)
+    return ai.clean(answer)
