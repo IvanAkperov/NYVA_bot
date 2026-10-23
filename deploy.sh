@@ -11,7 +11,8 @@ TZ_NAME="Europe/Moscow"              # расписание бота идёт п
 echo "==> Системные пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git sqlite3 python3 python3-venv python3-pip fonts-dejavu-core ca-certificates tzdata
+apt-get install -y git sqlite3 python3 python3-venv python3-pip fonts-dejavu-core ca-certificates tzdata cron
+systemctl enable --now cron 2>/dev/null || true
 
 echo "==> Часовой пояс $TZ_NAME"
 timedatectl set-timezone "$TZ_NAME" 2>/dev/null || ln -sf "/usr/share/zoneinfo/$TZ_NAME" /etc/localtime
