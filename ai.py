@@ -56,6 +56,9 @@ FALLBACK_MODELS = [m.strip() for m in os.getenv(
     "AI_FALLBACK_MODELS", "xingchen-agi/xing4.0-29b-a4b:free,recursive/flint-v1.0:free").split(",") if m.strip()]
 
 
+_REASONING_MANDATORY = False  # запоминаем, что модель не даёт выключить рассуждения
+
+
 async def _post(payload: dict) -> tuple[int, dict]:
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", **EXTRA_HEADERS}
     session = await _get_session()
@@ -65,6 +68,7 @@ async def _post(payload: dict) -> tuple[int, dict]:
 
 async def chat(messages: list, *, model: str | None = None, temperature: float = 0.8,
                top_p: float = 0.95, max_tokens: int = 300, json_mode: bool = False, **extra) -> str:
+    global _REASONING_MANDATORY
     payload = {
         "model": model or TEXT_MODEL,
         "messages": messages,
@@ -77,7 +81,11 @@ async def chat(messages: list, *, model: str | None = None, temperature: float =
             payload[key] = extra[key]
     if AI_PROVIDER == "openrouter":
         # рассуждения выключаем: так быстрее и модель не съедает весь лимит на «мысли»
-        payload["reasoning"] = {"enabled": False}
+        if _REASONING_MANDATORY:
+            payload["reasoning"] = {"effort": "low", "exclude": True}
+            payload["max_tokens"] = max(payload["max_tokens"], 4000)
+        else:
+            payload["reasoning"] = {"enabled": False}
         fallbacks = [m for m in FALLBACK_MODELS if m != payload["model"]]
         if fallbacks:
             payload["models"] = [payload["model"], *fallbacks][:3]
@@ -93,18 +101,29 @@ async def chat(messages: list, *, model: str | None = None, temperature: float =
             await asyncio.sleep(3 * (attempt + 1))
             continue
 
-        if status == 429 or status >= 500:
-            last_error = f"HTTP {status}: {str(data)[:300]}"
+        # OpenRouter иногда кладёт ошибку в тело ответа при HTTP 200 — достаём настоящий код
+        err = data.get("error") if isinstance(data, dict) else None
+        code = status
+        if err:
+            try:
+                code = int(err.get("code") or status)
+            except (TypeError, ValueError):
+                code = 400 if status == 200 else status
+        err_text = str(err or data).lower()
+
+        if code == 429 or code >= 500:
+            last_error = f"HTTP {code}: {str(data)[:300]}"
             await asyncio.sleep(3 * (attempt + 1))
             continue
-        if status == 400 and "reasoning" in str(data).lower() and "reasoning" in payload:
+        if "reasoning" in err_text and (err or code == 400) and payload.get("reasoning", {}).get("enabled") is False:
             # модель не умеет выключать рассуждения — разрешаем, но с запасом токенов и скрытыми «мыслями»
+            _REASONING_MANDATORY = True
             payload["reasoning"] = {"effort": "low", "exclude": True}
             payload["max_tokens"] = max(payload["max_tokens"], 4000)
-            last_error = f"HTTP 400: {str(data)[:300]}"
+            last_error = f"HTTP {code}: {str(err)[:300]}"
             continue
-        if status != 200 or "choices" not in data:
-            raise AIError(f"{AI_PROVIDER} {status}: {str(data)[:500]}")
+        if err or status != 200 or "choices" not in data:
+            raise AIError(f"{AI_PROVIDER} {code}: {str(data)[:500]}")
 
         choice = data["choices"][0]
         content = choice.get("message", {}).get("content") or ""
@@ -117,9 +136,8 @@ async def chat(messages: list, *, model: str | None = None, temperature: float =
         # пустой ответ: модель всё равно «думала» и упёрлась в лимит — даём больше токенов
         last_error = f"пустой ответ (finish_reason={choice.get('finish_reason')}, model={data.get('model')})"
         log.warning(last_error)
-        payload["reasoning"] = {"effort": "low", "exclude": True} if AI_PROVIDER == "openrouter" else None
-        if payload["reasoning"] is None:
-            payload.pop("reasoning")
+        if AI_PROVIDER == "openrouter":
+            payload["reasoning"] = {"effort": "low", "exclude": True}
         payload["max_tokens"] = max(payload["max_tokens"] * 3, 4000)
     raise AIError(f"{AI_PROVIDER} не ответил: {last_error}")
 

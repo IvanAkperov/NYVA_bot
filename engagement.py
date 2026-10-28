@@ -22,7 +22,7 @@ from aiogram.types import Message, PollAnswer, ReactionTypeEmoji
 import ai
 import db
 from api import get_horoscope_of_the_day
-from config import (ACTIVE_HOURS, ADMIN_ID, CONTEXT_MESSAGES, DRAW_TIME, FEATURES, FRIENDS, GROUP_CHAT_ID,
+from config import (ACTIVE_HOURS, ADMIN_ID, USERNAME_ALIASES, CONTEXT_MESSAGES, DRAW_TIME, FEATURES, FRIENDS, GROUP_CHAT_ID,
                     HOROSCOPE_TIME, INTERJECT_CHANCE, INTERJECT_COOLDOWN_MIN, JOB_GRACE_MINUTES,
                     QUIZ_TIME, REACT_CHANCE, REACT_COOLDOWN_MIN, RECAP_MIN_MESSAGES, RECAP_TIME,
                     SILENCE_HOURS, WHO_POLL_TIME)
@@ -52,6 +52,7 @@ def friend_name(username: str | None) -> str:
     if username == db.BOT_NAME_IN_LOG:
         return "Бот"
     key = username if username.startswith("@") else f"@{username}"
+    key = USERNAME_ALIASES.get(key.lower(), key)
     return FRIENDS.get(key, {}).get("name", username.lstrip("@"))
 
 
@@ -254,7 +255,8 @@ async def send_who_poll(bot: Bot) -> None:
     ], temperature=1.05, max_tokens=120)
     question = str(data["question"]).strip()
     options = [f["name"] for f in FRIENDS.values()]
-    msg = await bot.send_poll(GROUP_CHAT_ID, question=f"🤔 {question}"[:300], options=options, is_anonymous=False)
+    msg = await bot.send_poll(GROUP_CHAT_ID, question=f"🤔 {question}"[:300], options=options, is_anonymous=False,
+                               allows_multiple_answers=True)
     db.conn.execute(
         "INSERT INTO polls (poll_id, kind, chat_id, message_id, question, options, created_date) "
         "VALUES (?, 'who', ?, ?, ?, ?, ?)",
@@ -355,27 +357,75 @@ async def send_daily_recap(bot: Bot) -> None:
 
 
 # ================= гороскоп одним сообщением =================
-async def send_group_horoscope(bot: Bot) -> None:
-    rows = db.conn.execute("SELECT username, zodiac FROM users WHERE zodiac IS NOT NULL").fetchall()
-    raw = {}
-    for username, zodiac in rows:
+ZODIAC_RU = {"aries": "Овен", "taurus": "Телец", "gemini": "Близнецы", "cancer": "Рак", "leo": "Лев",
+             "virgo": "Дева", "libra": "Весы", "scorpio": "Скорпион", "sagittarius": "Стрелец",
+             "capricorn": "Козерог", "aquarius": "Водолей", "pisces": "Рыбы"}
+
+
+async def _fetch_horoscope(sign: str, attempts: int = 3) -> str | None:
+    """Сайт гороскопов иногда отваливается — пробуем несколько раз с паузой."""
+    for i in range(attempts):
         try:
-            raw[username] = (zodiac, (await asyncio.to_thread(get_horoscope_of_the_day, zodiac))[:1500])
+            text = await asyncio.to_thread(get_horoscope_of_the_day, sign)
+            if text and len(text) > 50:
+                return text[:1500]
         except Exception as e:
-            log.warning("horoscope %s failed: %r", zodiac, e)
-    if not raw:
+            log.warning("horoscope %s attempt %s failed: %r", sign, i + 1, e)
+        await asyncio.sleep(2 + 3 * i)
+    return None
+
+
+RUDE_WORDS = ("заткн", "дур", "туп", "идиот", "дебил", "сука", "бля", "хуй", "пизд", "ебан", "урод", "жирн", "отвал")
+
+
+def _assemble_horoscope(text: str, people: list) -> str:
+    """Берём по одной строке на каждого (дубли и болтовню модели выкидываем), недостающих дополняем."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    out = []
+    for name, sign, src in people:
+        line = next((l for l in lines if name.lower() in l.lower() and ":" in l
+                     and not any(w in l.lower() for w in RUDE_WORDS)), None)
+        if line:
+            msg = line.split(":", 1)[1].strip()
+        elif src:
+            msg = src[:220].rsplit(" ", 1)[0] + "…"
+        else:
+            msg = "звёзды сегодня молчат — значит, день твой, делай что хочешь 🌚"
+        out.append(f"{ZODIAC_EMOJI.get(sign, '✨')} {name}: {msg}")
+    return "\n\n".join(out)
+
+
+async def send_group_horoscope(bot: Bot) -> None:
+    rows = db.conn.execute(
+        "SELECT username, zodiac FROM users WHERE zodiac IS NOT NULL AND zodiac != ''").fetchall()
+    if not rows:
         return
-    source = "\n\n".join(f"{friend_name(u)} ({z}): {t}" for u, (z, t) in raw.items())
+    people = []
+    for username, sign in rows:
+        people.append((friend_name(username), sign, await _fetch_horoscope(sign)))
+        await asyncio.sleep(1)
+
+    names = ", ".join(p[0] for p in people)
+    source = "\n\n".join(
+        f"{name} — {ZODIAC_RU.get(sign, sign)}:\n{src or '(текста с сайта нет — придумай сам по знаку)'}"
+        for name, sign, src in people)
+    body = ""
     try:
         text = await ai.chat([
             {"role": "system", "content": knowledge() + (
-                "\n\nПерескажи гороскопы для каждого из друзей в 1–2 предложениях: с юмором, привязав к его жизни "
-                "и фактам о нём. Формат строго по строке на человека: «<эмодзи знака> Имя: текст». Без markdown.")},
+                f"\n\nНапиши короткий гороскоп на сегодня для КАЖДОГО: {names}. Ровно {len(people)} строк, "
+                "по строке на человека, в формате «Имя: текст», 1–2 предложения. "
+                "Опирайся на исходный текст гороскопа и обыграй жизнь человека по фактам о нём.\n"
+                "Тон: тёплый дружеский юмор и лёгкая ирония, как будто пишет друг. "
+                "ЗАПРЕЩЕНО: грубость, оскорбления, приказы вроде «заткнись», мат, подколы про внешность. "
+                "Никаких вступлений, пояснений и комментариев — только строки гороскопа. Без markdown.")},
             {"role": "user", "content": source},
-        ], temperature=0.85, max_tokens=500)
-        body = ai.clean(text)
-    except Exception:
-        body = "\n\n".join(f"{ZODIAC_EMOJI.get(z, '✨')} {friend_name(u)}: {t[:220]}…" for u, (z, t) in raw.items())
+        ], temperature=0.8, max_tokens=600)
+        body = _assemble_horoscope(ai.clean(text), people)
+    except Exception as e:
+        log.warning("horoscope AI failed: %r", e)
+    if not body:
+        body = _assemble_horoscope("", people)
     await send_logged(bot, GROUP_CHAT_ID, f"🔮 Гороскоп на {date.today().strftime('%d.%m')}\n\n{body}",
                       disable_notification=True)
 
